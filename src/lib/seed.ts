@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, insertMany } from "@/db";
 import { couriers, orders, transactions, messages } from "@/db/schema";
 import { eq, count } from "drizzle-orm";
 import {
@@ -10,11 +10,14 @@ import {
   pick,
 } from "./domain";
 
-let seedPromise: Promise<void> | null = null;
+// No Worker o módulo vive entre requisições: guardamos só o "já semeado",
+// nunca uma Promise (ela ficaria presa ao contexto de outra requisição).
+let seeded = false;
 
 export async function ensureSeeded() {
-  if (!seedPromise) seedPromise = runSeed();
-  return seedPromise;
+  if (seeded) return;
+  await runSeed();
+  seeded = true;
 }
 
 async function runSeed() {
@@ -58,10 +61,9 @@ async function runSeed() {
     .returning();
 
   /* Parceiros da rede */
-  const partnerRows = await db
-    .insert(couriers)
-    .values(
-      PARTNERS_SEED.map((p) => ({
+  const partnerRows = await insertMany(
+    couriers,
+    PARTNERS_SEED.map((p) => ({
         isMain: false,
         name: p.name,
         nickname: p.nickname,
@@ -74,8 +76,7 @@ async function runSeed() {
         vehicleModel: pick(["Honda CG 160", "Yamaha Factor 150", "Honda Biz 125", "Yamaha Fazer 250"]),
         rating: Math.round(rnd(4.6, 5.0) * 10) / 10,
       })),
-    )
-    .returning();
+  );
 
   /* Histórico financeiro — últimos 90 dias (base dos relatórios) */
   const now = new Date();
@@ -153,11 +154,11 @@ async function runSeed() {
       createdAt: ts,
     });
   }
-  await db.insert(transactions).values(txRows);
+  await insertMany(transactions, txRows);
 
   /* Feed inicial de pedidos disponíveis */
   const initialOrders = Array.from({ length: 7 }, () => generateOrder());
-  await db.insert(orders).values(initialOrders);
+  await insertMany(orders, initialOrders);
 
   /* Conversas iniciais do canal */
   const t = (minsAgo: number) => new Date(now.getTime() - minsAgo * 60000);
@@ -197,7 +198,7 @@ async function runSeed() {
       neighborhood: "Campo Limpo", createdAt: t(4),
     },
   ];
-  await db.insert(messages).values(seedMessages);
+  await insertMany(messages, seedMessages);
 }
 
 export async function getMainCourier() {

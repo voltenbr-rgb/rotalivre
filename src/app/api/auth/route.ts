@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { couriers, messages } from "@/db/schema";
-import { eq, ilike } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { ensureSeeded, getMainCourier } from "@/lib/seed";
 import { MAIN_BASE } from "@/lib/domain";
 
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (action === "login") {
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!email) return NextResponse.json({ error: "Informe seu e-mail" }, { status: 400 });
-    const rows = await db.select().from(couriers).where(ilike(couriers.email, email)).limit(1);
+    const rows = await db.select().from(couriers).where(sql`lower(${couriers.email}) = lower(${email})`).limit(1);
     if (!rows[0]) {
       return NextResponse.json(
         { error: "E-mail não encontrado. Verifique ou crie sua conta de associado." },
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     if (!(/^[A-Z]{3}\d{4}$/.test(plate) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(plate))) {
       return NextResponse.json({ error: "Placa inválida (use AAA0000 ou AAA0A00)" }, { status: 400 });
     }
-    const existing = await db.select().from(couriers).where(ilike(couriers.email, email)).limit(1);
+    const existing = await db.select().from(couriers).where(sql`lower(${couriers.email}) = lower(${email})`).limit(1);
     if (existing[0]) {
       return NextResponse.json(
         { error: "Este e-mail já é de um associado. Use a opção Entrar." },

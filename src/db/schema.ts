@@ -1,19 +1,17 @@
-import {
-  pgTable,
-  serial,
-  text,
-  integer,
-  doublePrecision,
-  boolean,
-  timestamp,
-} from "drizzle-orm/pg-core";
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+
+/* Helpers para manter a mesma API do schema original (Postgres) no D1/SQLite */
+const id = () => integer("id").primaryKey({ autoIncrement: true });
+const bool = (name: string) => integer(name, { mode: "boolean" });
+const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
+const now = () => new Date();
 
 /* ------------------------------------------------------------------ */
 /* Entregadores (courier principal + parceiros da rede)                */
 /* ------------------------------------------------------------------ */
-export const couriers = pgTable("couriers", {
-  id: serial("id").primaryKey(),
-  isMain: boolean("is_main").notNull().default(false),
+export const couriers = sqliteTable("couriers", {
+  id: id(),
+  isMain: bool("is_main").notNull().default(false),
   name: text("name").notNull(),
   nickname: text("nickname").notNull().default(""),
   email: text("email").notNull().default(""),
@@ -41,69 +39,69 @@ export const couriers = pgTable("couriers", {
   state: text("state").notNull().default(""),
   // Preferências operacionais
   workRadiusKm: integer("work_radius_km").notNull().default(8),
-  dailyGoal: doublePrecision("daily_goal").notNull().default(250),
-  baseLat: doublePrecision("base_lat").notNull().default(-23.6461),
-  baseLng: doublePrecision("base_lng").notNull().default(-46.7678),
-  rating: doublePrecision("rating").notNull().default(4.9),
+  dailyGoal: real("daily_goal").notNull().default(250),
+  baseLat: real("base_lat").notNull().default(-23.6461),
+  baseLng: real("base_lng").notNull().default(-46.7678),
+  rating: real("rating").notNull().default(4.9),
   totalDeliveries: integer("total_deliveries").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+  updatedAt: ts("updated_at").notNull().$defaultFn(now),
 });
 
 /* ------------------------------------------------------------------ */
 /* Pedidos / corridas                                                  */
 /* ------------------------------------------------------------------ */
-export const orders = pgTable("orders", {
-  id: serial("id").primaryKey(),
+export const orders = sqliteTable("orders", {
+  id: id(),
   code: text("code").notNull(),
   clientName: text("client_name").notNull(),
   establishment: text("establishment").notNull(),
   establishmentType: text("establishment_type").notNull().default("Restaurante"),
   pickupAddress: text("pickup_address").notNull(),
   pickupNeighborhood: text("pickup_neighborhood").notNull(),
-  pickupLat: doublePrecision("pickup_lat").notNull(),
-  pickupLng: doublePrecision("pickup_lng").notNull(),
+  pickupLat: real("pickup_lat").notNull(),
+  pickupLng: real("pickup_lng").notNull(),
   deliveryAddress: text("delivery_address").notNull(),
   deliveryNeighborhood: text("delivery_neighborhood").notNull(),
-  deliveryLat: doublePrecision("delivery_lat").notNull(),
-  deliveryLng: doublePrecision("delivery_lng").notNull(),
-  distanceKm: doublePrecision("distance_km").notNull(),
+  deliveryLat: real("delivery_lat").notNull(),
+  deliveryLng: real("delivery_lng").notNull(),
+  distanceKm: real("distance_km").notNull(),
   // Valor líquido garantido ao entregador (já com taxa transparente deduzida)
-  valueNet: doublePrecision("value_net").notNull(),
+  valueNet: real("value_net").notNull(),
   etaMinutes: integer("eta_minutes").notNull().default(25),
   itemsCount: integer("items_count").notNull().default(1),
   paymentMethod: text("payment_method").notNull().default("Pix"),
   // available | accepted | picked_up | delivered | expired | dismissed
   status: text("status").notNull().default("available"),
   courierId: integer("courier_id"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  acceptedAt: timestamp("accepted_at"),
-  pickedUpAt: timestamp("picked_up_at"),
-  deliveredAt: timestamp("delivered_at"),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+  acceptedAt: ts("accepted_at"),
+  pickedUpAt: ts("picked_up_at"),
+  deliveredAt: ts("delivered_at"),
 });
 
 /* ------------------------------------------------------------------ */
 /* Transações financeiras (base dos relatórios)                        */
 /* ------------------------------------------------------------------ */
-export const transactions = pgTable("transactions", {
-  id: serial("id").primaryKey(),
+export const transactions = sqliteTable("transactions", {
+  id: id(),
   courierId: integer("courier_id").notNull(),
   orderId: integer("order_id"),
   // entrega | gorjeta | bonus
   type: text("type").notNull().default("entrega"),
   description: text("description").notNull().default(""),
-  amountGross: doublePrecision("amount_gross").notNull().default(0),
-  feeAmount: doublePrecision("fee_amount").notNull().default(0),
-  amountNet: doublePrecision("amount_net").notNull().default(0),
-  km: doublePrecision("km").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  amountGross: real("amount_gross").notNull().default(0),
+  feeAmount: real("fee_amount").notNull().default(0),
+  amountNet: real("amount_net").notNull().default(0),
+  km: real("km").notNull().default(0),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
 });
 
 /* ------------------------------------------------------------------ */
 /* Mensagens do rádio / chat regional e alertas geolocalizados         */
 /* ------------------------------------------------------------------ */
-export const messages = pgTable("messages", {
-  id: serial("id").primaryKey(),
+export const messages = sqliteTable("messages", {
+  id: id(),
   courierId: integer("courier_id").notNull(),
   channel: text("channel").notNull().default("Zona Sul"),
   // texto | audio | alerta
@@ -113,7 +111,7 @@ export const messages = pgTable("messages", {
   content: text("content").notNull().default(""),
   audioDurationSec: integer("audio_duration_sec"),
   neighborhood: text("neighborhood").notNull().default(""),
-  lat: doublePrecision("lat"),
-  lng: doublePrecision("lng"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lat: real("lat"),
+  lng: real("lng"),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
 });

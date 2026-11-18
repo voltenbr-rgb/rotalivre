@@ -16,7 +16,7 @@ Os dados de demonstração são criados sozinhos na primeira requisição.
 
 1. Painel da Cloudflare → **Workers & Pages** → **Create** → **Import a repository** → escolha `rotalivre`.
 2. Configuração do build:
-   - **Build command:** `npx opennextjs-cloudflare build`
+   - **Build command:** `npm run cf`
    - **Deploy command:** `npx opennextjs-cloudflare deploy`
 3. Salve. A cada push na `main`, a Cloudflare publica de novo.
 

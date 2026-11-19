@@ -180,6 +180,11 @@ export default function ProfileView({ courier, onSaved, onLogout, notify, onOpen
           <p className="flex items-center gap-1 text-xs font-bold text-amber-300">
             <Star className="h-3.5 w-3.5 fill-amber-300" /> {form.rating.toFixed(1)} • {fmtNum(form.totalDeliveries ?? 0)} entregas concluídas
           </p>
+          {(form.cancelCount ?? 0) > 0 && (
+            <p className="text-[11px] font-bold text-red-300">
+              {form.cancelCount} corrida{form.cancelCount === 1 ? "" : "s"} cancelada{form.cancelCount === 1 ? "" : "s"} por você
+            </p>
+          )}
           <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
             <Bike className="h-3.5 w-3.5" /> {form.vehicleModel} • {form.vehiclePlate}
           </p>

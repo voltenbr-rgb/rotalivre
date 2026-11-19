@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, couriers } from "@/db/schema";
+import { orders, couriers, orderCancellations } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
-import { completeDelivery, forCourier, MAX_CODE_ATTEMPTS } from "@/lib/delivery";
+import { completeDelivery, forCourier, MAX_CODE_ATTEMPTS, RATING_CANCEL_PENALTY, RATING_MIN } from "@/lib/delivery";
+import { fmtBRL, fmtKm } from "@/lib/format";
+import { inBackground, notifyCouriersNear } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,8 @@ export const dynamic = "force-dynamic";
  * - deliver: fecha a entrega (só quem aceitou). Pedido de loja exige o código
  *   de 4 dígitos que o cliente recebeu da loja.
  * - dismiss: some só do feed deste entregador (não afeta os outros)
+ * - cancel: entregador desiste da corrida aceita. Conta como cancelamento na nota,
+ *   o pedido volta para os outros entregadores e a loja é avisada.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -77,6 +81,45 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       .where(eq(orders.id, orderId))
       .returning();
     return NextResponse.json({ order: serialize(updated) });
+  }
+
+  if (action === "cancel") {
+    if (order.status !== "accepted" && order.status !== "picked_up") {
+      return NextResponse.json({ error: "Este pedido não está mais com você" }, { status: 409 });
+    }
+    const reason = String(body.reason ?? "").trim().slice(0, 120);
+    const [back] = await db
+      .update(orders)
+      .set({ status: "available", courierId: null, acceptedAt: null, pickedUpAt: null, deliveryCodeAttempts: 0, renotifiedAt: new Date() })
+      .where(and(eq(orders.id, orderId), eq(orders.courierId, main.id), inArray(orders.status, ["accepted", "picked_up"])))
+      .returning();
+    if (!back) return NextResponse.json({ error: "Este pedido não está mais com você" }, { status: 409 });
+
+    const rating = Math.max(RATING_MIN, Math.round((main.rating - RATING_CANCEL_PENALTY) * 100) / 100);
+    const cancelCount = (main.cancelCount ?? 0) + 1;
+    await db.update(couriers).set({ status: "online", rating, cancelCount }).where(eq(couriers.id, main.id));
+    await db.insert(orderCancellations).values({
+      orderId, courierId: main.id, storeId: order.storeId, reason, stage: order.status,
+    });
+
+    // Avisa os outros entregadores que a corrida voltou
+    if (order.storeId) {
+      inBackground(
+        notifyCouriersNear(
+          order.pickupLat,
+          order.pickupLng,
+          12,
+          {
+            title: `🔁 Corrida liberada de novo • ${order.establishment} • ${fmtBRL(order.valueNet)}`,
+            body: `${order.pickupNeighborhood || "Coleta"} → ${order.deliveryNeighborhood || order.deliveryAddress} • ${fmtKm(order.distanceKm)}`,
+            url: "/",
+            tag: "corrida",
+          },
+          { respectGap: false, vehicles: order.acceptedVehicles ?? "todos" },
+        ),
+      );
+    }
+    return NextResponse.json({ ok: true, rating, cancelCount });
   }
 
   if (action === "deliver") {

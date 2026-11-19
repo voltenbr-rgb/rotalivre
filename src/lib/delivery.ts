@@ -35,10 +35,11 @@ export async function completeDelivery(order: OrderRow, courierId: number) {
       km: order.distanceKm,
     })
     .returning();
-  const [c] = await db.select({ total: couriers.totalDeliveries }).from(couriers).where(eq(couriers.id, courierId)).limit(1);
+  const [c] = await db.select({ total: couriers.totalDeliveries, rating: couriers.rating }).from(couriers).where(eq(couriers.id, courierId)).limit(1);
   await db
     .update(couriers)
-    .set({ status: "online", totalDeliveries: (c?.total ?? 0) + 1 })
+    // Cada entrega concluída recupera um pouco da nota (até 5,0)
+    .set({ status: "online", totalDeliveries: (c?.total ?? 0) + 1, rating: Math.min(5, Math.round(((c?.rating ?? 5) + RATING_RECOVER) * 100) / 100) })
     .where(eq(couriers.id, courierId));
   return { order: updated, earned: tx.amountNet };
 }
@@ -55,3 +56,8 @@ export function newPublicToken() {
   crypto.getRandomValues(b);
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }
+
+/** Nota do entregador: desistir de corrida tira 0,2; cada entrega devolve 0,02 */
+export const RATING_CANCEL_PENALTY = 0.2;
+export const RATING_RECOVER = 0.02;
+export const RATING_MIN = 1;

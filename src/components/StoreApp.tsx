@@ -31,6 +31,7 @@ const STAGE_ALERT: Record<string, string> = {
   picked_up: "📦 {c} retirou o pedido {code} — saiu para entrega",
   delivered: "✅ Pedido {code} entregue!",
   expired: "⚠ Ninguém aceitou o pedido {code}",
+  available: "↩ O entregador desistiu do pedido {code}. Já avisamos outros entregadores.",
 };
 
 function beep(times = 2) {

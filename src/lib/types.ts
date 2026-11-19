@@ -29,6 +29,7 @@ export interface Courier {
   baseLng: number;
   rating: number;
   totalDeliveries: number;
+  cancelCount?: number;
   vehicleType?: VehicleType;
   lastLat?: number | null;
   lastLng?: number | null;

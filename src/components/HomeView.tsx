@@ -116,6 +116,34 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap,
     }
   };
 
+  const [cancelOpen, setCancelOpen] = useState(false);
+
+  const cancelRide = async (order: Order, reason: string) => {
+    setActing(true);
+    try {
+      const res = await apiFetch(`/api/orders/${order.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        notify(data.error ?? "Não foi possível cancelar", "warn");
+        return;
+      }
+      // A corrida volta para os outros; some do feed deste entregador
+      const ids = loadDismissed();
+      ids.add(order.id);
+      saveDismissed(ids);
+      setCancelOpen(false);
+      notify(`Corrida cancelada. Sua nota agora é ${Number(data.rating).toFixed(1)}`, "warn");
+      await refreshDashboard();
+      loadOrders();
+    } finally {
+      setActing(false);
+    }
+  };
+
   const afterAction = async (order: Order, action: "accept" | "pickup" | "deliver" | "dismiss", data: { earned?: number; tip?: number | null }) => {
     {
       if (action === "accept") {
@@ -233,6 +261,21 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap,
               </button>
             )}
           </div>
+          <button
+            onClick={() => setCancelOpen(true)}
+            disabled={acting}
+            className="mt-3 w-full text-center text-[12px] font-bold text-red-300/80 active:text-red-300"
+          >
+            Tive um imprevisto — desistir da corrida
+          </button>
+          {cancelOpen && (
+            <CancelRideDialog
+              pickedUp={active.status === "picked_up"}
+              busy={acting}
+              onClose={() => setCancelOpen(false)}
+              onConfirm={(reason) => cancelRide(active, reason)}
+            />
+          )}
         </section>
       )}
 
@@ -297,6 +340,62 @@ function Stat({ icon, label, value, small }: { icon: React.ReactNode; label: str
         {icon} {label}
       </p>
       <p className={`mt-1 font-display font-extrabold text-white tabular-nums ${small ? "text-[13px]" : "text-base"}`}>{value}</p>
+    </div>
+  );
+}
+
+const CANCEL_REASONS = ["Problema no veículo", "Imprevisto pessoal", "Endereço muito longe", "Loja demorando demais", "Outro motivo"];
+
+function CancelRideDialog({
+  pickedUp, busy, onClose, onConfirm,
+}: { pickedUp: boolean; busy: boolean; onClose: () => void; onConfirm: (reason: string) => void }) {
+  const [reason, setReason] = useState("");
+  return (
+    <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/80 sm:items-center" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="slide-up w-full max-w-[420px] rounded-t-3xl border border-red-500/30 bg-[#0d1015] p-6 sm:rounded-3xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)" }}
+      >
+        <p className="font-display text-xl font-black text-white">Desistir da corrida?</p>
+        <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-3">
+          <p className="text-[14px] font-bold text-red-200">⚠ Isso vai contar como cancelamento na sua nota.</p>
+          <p className="mt-1 text-[12px] leading-snug text-red-200/80">
+            Sua nota cai 0,2 ponto e a loja é avisada. Cada entrega concluída depois ajuda a recuperar.
+          </p>
+        </div>
+        {pickedUp && (
+          <p className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-[12px] leading-snug text-amber-100">
+            Você já retirou o pedido: <b>devolva na loja</b> para outro entregador levar.
+          </p>
+        )}
+        <p className="mt-4 text-[12px] font-bold text-zinc-400">O que aconteceu?</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {CANCEL_REASONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => setReason(r)}
+              className={`rounded-full border px-3 py-1.5 text-[12px] font-bold ${
+                reason === r ? "border-red-400 bg-red-500/20 text-red-200" : "border-white/10 bg-white/5 text-zinc-300"
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button onClick={onClose} className="h-12 flex-1 rounded-2xl bg-white/8 text-sm font-black text-white">
+            CONTINUAR A CORRIDA
+          </button>
+          <button
+            onClick={() => onConfirm(reason)}
+            disabled={busy || !reason}
+            className="h-12 flex-1 rounded-2xl bg-red-500 text-sm font-black text-white disabled:opacity-40"
+          >
+            SIM, CANCELAR
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

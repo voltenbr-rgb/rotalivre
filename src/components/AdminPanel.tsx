@@ -14,6 +14,7 @@ type Overview = {
   couriers: {
     id: number; name: string; nickname: string; email: string; vehicleType: string; status: string;
     city: string; blocked: boolean; lastSeenAt: string | null; createdAt: string;
+    rating: number; cancelCount: number; totalDeliveries: number;
   }[];
   support: {
     id: number; accountType: string; email: string; contact: string; message: string; kind: string; status: string; createdAt: string;
@@ -170,7 +171,7 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
                 title={`${x.name}${x.nickname ? ` “${x.nickname}”` : ""}${x.blocked ? " 🚫" : ""}`}
                 sub={`${x.email} • ${VEHICLE[x.vehicleType] ?? x.vehicleType}${x.city ? ` • ${x.city}` : ""}`}
                 right={x.blocked ? "bloqueado" : x.status}
-                foot={`Visto ${when(x.lastSeenAt)} • cadastro ${when(x.createdAt)}`}
+                foot={`⭐ ${x.rating.toFixed(1)} • ${x.totalDeliveries} entregas • ${x.cancelCount} desistência${x.cancelCount === 1 ? "" : "s"} • visto ${when(x.lastSeenAt)}`}
               >
                 <AccountActions
                   blocked={x.blocked}

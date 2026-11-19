@@ -68,6 +68,9 @@ export async function GET(req: Request) {
     })),
     couriers: courierRows.map((c) => ({
       id: c.id,
+      rating: c.rating,
+      cancelCount: c.cancelCount,
+      totalDeliveries: c.totalDeliveries,
       name: c.name,
       nickname: c.nickname,
       email: c.email,

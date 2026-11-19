@@ -44,6 +44,8 @@ export const couriers = sqliteTable("couriers", {
   baseLng: real("base_lng").notNull().default(-46.7678),
   rating: real("rating").notNull().default(4.9),
   totalDeliveries: integer("total_deliveries").notNull().default(0),
+  // Corridas aceitas e depois desistidas (pesa na nota)
+  cancelCount: integer("cancel_count").notNull().default(0),
   // Senha protegida (PBKDF2). Nunca sai do servidor.
   passwordHash: text("password_hash"),
   // moto | bicicleta | scooter | carro
@@ -241,4 +243,15 @@ export const supportRequests = sqliteTable("support_requests", {
   status: text("status").notNull().default("aberto"), // aberto | resolvido
   createdAt: ts("created_at").notNull().$defaultFn(now),
   resolvedAt: ts("resolved_at"),
+});
+
+/* Desistências de corrida pelo entregador (contam na nota) */
+export const orderCancellations = sqliteTable("order_cancellations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  orderId: integer("order_id").notNull(),
+  courierId: integer("courier_id").notNull(),
+  storeId: integer("store_id"),
+  reason: text("reason").notNull().default(""),
+  stage: text("stage").notNull().default("accepted"),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
 });

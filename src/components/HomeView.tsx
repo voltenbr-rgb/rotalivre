@@ -20,16 +20,20 @@ interface Props {
   askDeliveryCode: (order: Order, error?: string) => Promise<string | null>;
 }
 
-/** Pedidos ignorados ficam escondidos só neste aparelho (não somem para os outros) */
-const DISMISSED_KEY = "rl_dismissed_orders";
-function loadDismissed(): Set<number> {
+/**
+ * Pedidos ignorados ficam escondidos só neste aparelho (não somem para os outros).
+ * A chave é pedido + valor: se a loja aumentar o valor ou relançar, ele reaparece.
+ */
+const DISMISSED_KEY = "rl_dismissed_v2";
+const dismissKey = (o: Order) => `${o.id}:${o.valueNet}`;
+function loadDismissed(): Set<string> {
   try {
     return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]"));
   } catch {
     return new Set();
   }
 }
-function saveDismissed(ids: Set<number>) {
+function saveDismissed(ids: Set<string>) {
   try {
     localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids].slice(-200)));
   } catch { /* ignore */ }
@@ -41,7 +45,7 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap,
   const [orders, setOrders] = useState<Order[]>([]);
   const [sort, setSort] = useState<SortMode>("valor");
   const [acting, setActing] = useState(false);
-  const knownIds = useRef<Set<number>>(new Set());
+  const knownIds = useRef<Set<string>>(new Set());
   const firstLoad = useRef(true);
 
   const loadOrders = useCallback(async () => {
@@ -49,13 +53,13 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap,
       const res = await apiFetch("/api/orders");
       const data = await res.json();
       const dismissed = loadDismissed();
-      const list: Order[] = (data.orders ?? []).filter((o: Order) => !dismissed.has(o.id));
+      const list: Order[] = (data.orders ?? []).filter((o: Order) => !dismissed.has(dismissKey(o)));
       if (!firstLoad.current) {
-        const fresh = list.filter((o) => !knownIds.current.has(o.id));
+        const fresh = list.filter((o) => !knownIds.current.has(dismissKey(o)));
         if (fresh.length > 0) notify(`Nova corrida na praça: ${fresh[0].establishment} • ${fmtBRL(fresh[0].valueNet)}`);
       }
       firstLoad.current = false;
-      knownIds.current = new Set(list.map((o) => o.id));
+      knownIds.current = new Set(list.map((o) => dismissKey(o)));
       setOrders(list);
     } catch {
       /* rede instável: mantém o feed atual */
@@ -79,7 +83,7 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap,
   const act = async (order: Order, action: "accept" | "pickup" | "deliver" | "dismiss") => {
     if (action === "dismiss") {
       const ids = loadDismissed();
-      ids.add(order.id);
+      ids.add(dismissKey(order));
       saveDismissed(ids);
     }
     // Pedido de loja: pede o código que o cliente recebeu
@@ -131,10 +135,7 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap,
         notify(data.error ?? "Não foi possível cancelar", "warn");
         return;
       }
-      // A corrida volta para os outros; some do feed deste entregador
-      const ids = loadDismissed();
-      ids.add(order.id);
-      saveDismissed(ids);
+      // A corrida volta para o feed de todos (inclusive o seu)
       setCancelOpen(false);
       notify(`Corrida cancelada. Sua nota agora é ${Number(data.rating).toFixed(1)}`, "warn");
       await refreshDashboard();

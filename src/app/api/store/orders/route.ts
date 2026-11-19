@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { couriers, orders } from "@/db/schema";
+import { couriers, orderCancellations, orders } from "@/db/schema";
 import { getSessionStore, unauthorized } from "@/lib/auth";
 import { haversineKm, orderCode } from "@/lib/domain";
 import { fmtBRL, fmtKm } from "@/lib/format";
@@ -80,8 +80,20 @@ export async function GET(req: Request) {
     }
   }
 
+  // Quantas vezes cada pedido foi largado por entregador
+  const ids = rows.map((r) => r.o.id);
+  const drops = new Map<number, number>();
+  for (let i = 0; i < ids.length; i += 90) {
+    const part = await db
+      .select({ orderId: orderCancellations.orderId })
+      .from(orderCancellations)
+      .where(inArray(orderCancellations.orderId, ids.slice(i, i + 90)));
+    for (const d of part) drops.set(d.orderId, (drops.get(d.orderId) ?? 0) + 1);
+  }
+
   const list = rows.map(({ o, c }) => ({
     ...o,
+    desistCount: drops.get(o.id) ?? 0,
     renotifiedAt: iso(o.renotifiedAt),
     waitingMinutes: o.status === "available" ? Math.floor((now - o.createdAt.getTime()) / 60000) : 0,
     // Pedido de loja disponível há mais de 3 h é considerado expirado

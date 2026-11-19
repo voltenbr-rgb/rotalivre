@@ -91,6 +91,7 @@ export interface StoreOrder extends Order {
   courierPos: { lat: number; lng: number; seenAt: string | null } | null;
   publicToken: string | null;
   waitingMinutes: number;
+  desistCount: number;
   acceptedAt: string | null;
   pickedUpAt: string | null;
   deliveredAt: string | null;

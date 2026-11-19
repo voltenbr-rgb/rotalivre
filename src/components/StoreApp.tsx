@@ -580,14 +580,16 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
 
   const [mapOpen, setMapOpen] = useState<number | null>(null);
 
-  const raise = async (id: number) => {
+  const raise = async (id: number, amount: number, relaunch = false) => {
     const res = await apiFetch(`/api/store/orders/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "raise" }),
+      body: JSON.stringify({ action: relaunch ? "relaunch" : "raise", amount }),
     });
     const data = await res.json().catch(() => ({}));
-    notify(res.ok ? `Valor aumentado para ${fmtBRL(data.valueNet)} — entregadores avisados de novo` : data.error ?? "Não foi possível", res.ok ? "ok" : "warn");
+    if (!res.ok) notify(data.error ?? "Não foi possível", "warn");
+    else if (relaunch) notify(`Pedido relançado por ${fmtBRL(data.valueNet)} — entregadores avisados`);
+    else notify(`Valor aumentado para ${fmtBRL(data.valueNet)} — entregadores avisados de novo`);
     reload();
   };
 
@@ -635,6 +637,8 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
             (link ? `\n\nAcompanhe ao vivo: ${link}` : ""),
         );
         const stale = o.status === "available" && o.waitingMinutes >= 5;
+        const dropped = o.status === "available" && o.desistCount > 0;
+        const canRelaunch = o.status === "cancelled" || o.status === "expired";
         const clientWa = o.clientPhone ? `https://wa.me/55${o.clientPhone.replace(/\D/g, "")}?text=${clientMsg}` : `https://wa.me/?text=${clientMsg}`;
         return (
           <article key={o.id} className="rounded-3xl border border-white/8 bg-[#101319] p-4">
@@ -663,14 +667,44 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
               </span>
             </div>
 
-            {stale && (
-              <div className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3">
-                <p className="text-[13px] leading-snug text-amber-100">
-                  ⏳ <b>{o.waitingMinutes} min sem entregador.</b> Já avisamos de novo os entregadores num raio maior. Aumentar o valor ajuda.
+            {o.status === "available" && (
+              <div className={`mt-3 rounded-2xl border p-3 ${dropped || stale ? "border-amber-400/30 bg-amber-400/10" : "border-white/8 bg-white/3"}`}>
+                {dropped ? (
+                  <p className="text-[13px] leading-snug text-amber-100">
+                    ↩ <b>O entregador desistiu</b> e o pedido voltou para a praça. Aumentar o valor ajuda a sair mais rápido.
+                  </p>
+                ) : stale ? (
+                  <p className="text-[13px] leading-snug text-amber-100">
+                    ⏳ <b>{o.waitingMinutes} min sem entregador.</b> Já avisamos de novo num raio maior. Aumentar o valor ajuda.
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-zinc-400">Quer que saia mais rápido? Aumente o valor da entrega:</p>
+                )}
+                <div className="mt-2 flex gap-2">
+                  {[2, 5].map((v) => (
+                    <button key={v} onClick={() => raise(o.id, v)} className="rounded-xl bg-amber-400 px-3.5 py-2 text-[13px] font-black text-zinc-950 active:scale-95">
+                      + R$ {v},00 ({fmtBRL(o.valueNet + v)})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {canRelaunch && (
+              <div className="mt-3 rounded-2xl border border-lime-400/25 bg-lime-400/8 p-3">
+                <p className="text-[13px] leading-snug text-lime-100">
+                  {o.status === "expired" ? "Ninguém pegou esse pedido." : "Pedido cancelado."} Quer lançar de novo?
                 </p>
-                <button onClick={() => raise(o.id)} className="mt-2 rounded-xl bg-amber-400 px-4 py-2 text-[13px] font-black text-zinc-950 active:scale-95">
-                  + R$ 2,00 na entrega ({fmtBRL(o.valueNet + 2)})
-                </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => raise(o.id, 0, true)} className="rounded-xl bg-white/10 px-3.5 py-2 text-[13px] font-bold text-white active:scale-95">
+                    Relançar ({fmtBRL(o.valueNet)})
+                  </button>
+                  {[2, 5].map((v) => (
+                    <button key={v} onClick={() => raise(o.id, v, true)} className="rounded-xl bg-lime-400 px-3.5 py-2 text-[13px] font-black text-zinc-950 active:scale-95">
+                      Relançar + R$ {v} ({fmtBRL(o.valueNet + v)})
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

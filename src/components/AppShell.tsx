@@ -242,7 +242,8 @@ export default function AppShell() {
         if (action === "pickup") notify("Coleta confirmada. Rota até o cliente no mapa!");
         if (action === "deliver") {
           notify(`Entrega concluída! +${fmtBRL(data.earned)} no seu saldo`);
-          if (data.tip) setTimeout(() => notify(`Gorjeta recebida: +${fmtBRL(data.tip)}`), 700);
+          const tip = data.tip;
+          if (tip) setTimeout(() => notify(`Gorjeta recebida: +${fmtBRL(tip)}`), 700);
           if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
         }
         await refreshAll();

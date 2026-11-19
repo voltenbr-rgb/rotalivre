@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import {
-  CloudRainWind, ExternalLink, Flag, LocateFixed, LocateOff, MapPin, Navigation,
+  CloudRainWind, ExternalLink, Flag, LocateFixed, LocateOff, MapPin, Moon, Navigation, Sun,
   Search, ShieldExclamationPoint, Siren, Store, TriangleExclamationPoint, Users, X,
 } from "lucide-react";
 import type { Map as LeafletMap, Marker, LayerGroup } from "leaflet";
@@ -107,6 +107,21 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
   const [following, setFollowing] = useState(true);
   const [confirmArmed, setConfirmArmed] = useState(false);
   const [alertMenuOpen, setAlertMenuOpen] = useState(false);
+  // Cor do mapa: claro (padrão, como mapa normal) ou escuro (noite). Fica salvo no aparelho.
+  const [darkMap, setDarkMap] = useState(false);
+  useEffect(() => {
+    try {
+      setDarkMap(localStorage.getItem("rl_map_dark") === "1");
+    } catch { /* ignore */ }
+  }, []);
+  const toggleMapColor = () => {
+    setDarkMap((v) => {
+      try {
+        localStorage.setItem("rl_map_dark", v ? "0" : "1");
+      } catch { /* ignore */ }
+      return !v;
+    });
+  };
 
   /* ---------- GPS real do celular ---------- */
   const gpsActive = gps.status === "active";
@@ -569,7 +584,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0b0e13]">
-      <div ref={containerRef} className="absolute inset-0 z-0" />
+      <div ref={containerRef} className={`absolute inset-0 z-0 ${darkMap ? "rl-map-dark" : "rl-map-light"}`} />
 
       {/* Chip superior de navegação */}
       <div className="absolute top-3 right-3 left-3 z-[500]">
@@ -680,6 +695,13 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
           aria-label="Centralizar e seguir minha posição"
         >
           {gpsActive ? <LocateFixed className="h-5 w-5" /> : <LocateOff className="h-5 w-5" />}
+        </button>
+        <button
+          onClick={toggleMapColor}
+          className="flex items-center justify-center rounded-xl border border-white/10 bg-[#0b0e13]/85 p-2.5 text-zinc-200 shadow-xl backdrop-blur-md"
+          aria-label={darkMap ? "Mapa claro" : "Mapa escuro"}
+        >
+          {darkMap ? <Sun className="h-5 w-5 text-amber-300" /> : <Moon className="h-5 w-5 text-sky-300" />}
         </button>
         <div className="relative">
           <button

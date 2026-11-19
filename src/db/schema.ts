@@ -122,3 +122,24 @@ export const messages = sqliteTable("messages", {
   lng: real("lng"),
   createdAt: ts("created_at").notNull().$defaultFn(now),
 });
+
+/* ------------------------------------------------------------------ */
+/* Notificações push: um registro por aparelho que ligou o "sino"      */
+/* ------------------------------------------------------------------ */
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  id: id(),
+  courierId: integer("courier_id").notNull(),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  lastPushAt: ts("last_push_at"),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+});
+
+/* ------------------------------------------------------------------ */
+/* Configurações internas do app (ex.: chaves VAPID do push)           */
+/* ------------------------------------------------------------------ */
+export const appConfig = sqliteTable("app_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});

@@ -1,5 +1,5 @@
 /* RotaLivre — Service Worker (cache apenas de ativos estáticos; API sempre online) */
-const CACHE = "rotalivre-static-v3";
+const CACHE = "rotalivre-static-v4";
 const STATIC_DESTINATIONS = ["style", "script", "font", "image"];
 
 self.addEventListener("install", (event) => {
@@ -35,4 +35,48 @@ self.addEventListener("fetch", (event) => {
       ),
     );
   }
+});
+
+/* ---------- Notificações push (corridas novas, testes) ---------- */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "RotaLivre", body: event.data ? event.data.text() : "" };
+  }
+  const title = data.title || "RotaLivre";
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/badge-96.png",
+    tag: data.tag || "rotalivre",
+    renotify: true,
+    vibrate: [200, 100, 200],
+    data: { url: data.url || "/" },
+  };
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      // Com o app aberto na tela, não precisa notificar (o feed já mostra)
+      const visible = list.some((c) => c.visibilityState === "visible" && c.focused);
+      if (visible && data.tag === "corrida") return;
+      return self.registration.showNotification(title, options);
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) {
+          c.navigate(url).catch(() => null);
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, ChevronDown, Star, Check } from "lucide-react";
+import { Bell, BellOff, BellRing, ChevronDown, Star, Check } from "lucide-react";
+import { usePush } from "@/lib/usePush";
 import type { Courier, CourierStatus } from "@/lib/types";
 import { fmtBRL, STATUS_LABEL, initialsOf } from "@/lib/format";
 
@@ -10,6 +11,7 @@ interface Props {
   todayNet: number;
   onStatusChange: (s: CourierStatus) => void;
   onOpenProfile: () => void;
+  notify?: (msg: string, tone?: "ok" | "warn" | "sos") => void;
 }
 
 const SWITCHABLE: { value: CourierStatus; label: string; hint: string }[] = [
@@ -18,14 +20,18 @@ const SWITCHABLE: { value: CourierStatus; label: string; hint: string }[] = [
   { value: "offline", label: "Offline", hint: "Invisível para a rede" },
 ];
 
-export default function Header({ courier, todayNet, onStatusChange, onOpenProfile }: Props) {
+export default function Header({ courier, todayNet, onStatusChange, onOpenProfile, notify }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLDivElement>(null);
+  const [bellOpen, setBellOpen] = useState(false);
+  const push = usePush();
   const meta = STATUS_LABEL[courier.status] ?? STATUS_LABEL.online;
 
   useEffect(() => {
     const close = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
     };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
@@ -67,10 +73,85 @@ export default function Header({ courier, todayNet, onStatusChange, onOpenProfil
           </div>
         </div>
 
-        <button className="relative rounded-xl border border-white/10 bg-white/5 p-2.5 text-zinc-300" aria-label="Notificações">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-2 right-2.5 h-2 w-2 rounded-full bg-lime-400" />
-        </button>
+        <div ref={bellRef} className="relative">
+          <button
+            onClick={() => setBellOpen((v) => !v)}
+            className={`relative rounded-xl border p-2.5 ${
+              push.state === "on" ? "border-lime-400/40 bg-lime-400/10 text-lime-300" : "border-white/10 bg-white/5 text-zinc-300"
+            }`}
+            aria-label="Avisos de corrida"
+          >
+            {push.state === "on" ? <BellRing className="h-5 w-5" /> : push.state === "denied" ? <BellOff className="h-5 w-5" /> : <Bell className="h-5 w-5" />}
+            {push.state === "off" && <span className="absolute top-2 right-2.5 h-2 w-2 rounded-full bg-amber-400" />}
+          </button>
+
+          {bellOpen && (
+            <div className="slide-up absolute top-full right-0 z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-[#0d1015] p-4 shadow-2xl">
+              <p className="flex items-center gap-2 text-sm font-extrabold text-white">
+                <BellRing className="h-4 w-4 text-lime-400" /> Avisos de corrida
+              </p>
+              {push.state === "on" && (
+                <>
+                  <p className="mt-1.5 text-xs leading-snug text-zinc-400">
+                    Ligado. Quando surgir corrida a até 5 km de você e você estiver <b className="text-zinc-200">Online</b>, o celular avisa, mesmo com o app fechado.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      await push.sendTest();
+                      notify?.("Teste enviado! Feche o app: o aviso chega em ~10 segundos.");
+                      setBellOpen(false);
+                    }}
+                    className="mt-3 h-10 w-full rounded-xl bg-lime-400 text-xs font-black text-zinc-950 active:scale-95"
+                  >
+                    ENVIAR AVISO DE TESTE
+                  </button>
+                  <button
+                    disabled={push.busy}
+                    onClick={async () => {
+                      await push.disable();
+                      notify?.("Avisos de corrida desligados neste aparelho", "warn");
+                    }}
+                    className="mt-2 h-9 w-full rounded-xl bg-white/6 text-xs font-bold text-zinc-300 active:scale-95 disabled:opacity-50"
+                  >
+                    Desligar avisos
+                  </button>
+                </>
+              )}
+              {push.state === "off" && (
+                <>
+                  <p className="mt-1.5 text-xs leading-snug text-zinc-400">
+                    Receba no celular cada corrida nova perto de você, mesmo com o app fechado.
+                  </p>
+                  <button
+                    disabled={push.busy}
+                    onClick={async () => {
+                      const err = await push.enable();
+                      notify?.(err ?? "Pronto! Você vai receber os avisos de corrida.", err ? "warn" : "ok");
+                    }}
+                    className="mt-3 h-10 w-full rounded-xl bg-lime-400 text-xs font-black text-zinc-950 active:scale-95 disabled:opacity-50"
+                  >
+                    {push.busy ? "LIGANDO…" : "LIGAR AVISOS DE CORRIDA"}
+                  </button>
+                </>
+              )}
+              {push.state === "denied" && (
+                <p className="mt-1.5 text-xs leading-snug text-amber-200">
+                  As notificações estão bloqueadas para o RotaLivre. Libere em Configurações do celular → Apps → (seu navegador ou RotaLivre) → Notificações, e volte aqui.
+                </p>
+              )}
+              {push.state === "ios-install" && (
+                <p className="mt-1.5 text-xs leading-snug text-amber-200">
+                  No iPhone, instale primeiro o app na Tela de Início (Safari → Compartilhar → Adicionar à Tela de Início) e abra por lá.
+                </p>
+              )}
+              {(push.state === "unsupported" || push.state === "loading") && (
+                <p className="mt-1.5 text-xs leading-snug text-zinc-400">
+                  {push.state === "loading" ? "Verificando…" : "Este navegador não suporta notificações. Use o Chrome."}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-end justify-between gap-3 px-4 pb-3">

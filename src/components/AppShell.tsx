@@ -230,6 +230,7 @@ export default function AppShell() {
           todayNet={dashboard?.todayNet ?? 0}
           onStatusChange={handleStatusChange}
           onOpenProfile={() => setTab("perfil")}
+          notify={notify}
         />
 
         <main className="relative min-h-0 flex-1">

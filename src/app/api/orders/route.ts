@@ -4,6 +4,8 @@ import { orders } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { generateOrder, haversineKm } from "@/lib/domain";
+import { fmtBRL, fmtKm } from "@/lib/format";
+import { inBackground, notifyCouriersNear } from "@/lib/push";
 
 /** Raio do feed: só aparecem coletas até esta distância do entregador */
 const FEED_RADIUS_KM = 25;
@@ -50,16 +52,32 @@ export async function GET(req: Request) {
   fresh.length = 0;
   fresh.push(...nearby);
 
+  const created: (typeof available)[number][] = [];
   // Novos pedidos chegando na praça — a praça nunca fica vazia
   while (fresh.length < 6) {
-    const [created] = await db.insert(orders).values(generateOrder(center)).returning();
-    fresh.unshift(created);
+    const [row] = await db.insert(orders).values(generateOrder(center)).returning();
+    fresh.unshift(row);
+    created.push(row);
   }
   if (fresh.length < 9 && Math.random() < 0.5) {
-    const [created] = await db.insert(orders).values(generateOrder(center)).returning();
-    fresh.unshift(created);
+    const [row] = await db.insert(orders).values(generateOrder(center)).returning();
+    fresh.unshift(row);
+    created.push(row);
   }
   await Promise.all(updates);
+
+  // Notificação push da corrida nova para quem está perto da loja (5 km)
+  const newest = created[created.length - 1];
+  if (newest) {
+    inBackground(
+      notifyCouriersNear(newest.pickupLat, newest.pickupLng, 5, {
+        title: `Nova corrida • ${fmtBRL(newest.valueNet)}`,
+        body: `${newest.establishment} (${newest.pickupNeighborhood}) → ${newest.deliveryNeighborhood} • ${fmtKm(newest.distanceKm)}`,
+        url: "/",
+        tag: "corrida",
+      }),
+    );
+  }
 
   const result = fresh.slice(0, 12).map((o) => ({
     ...o,

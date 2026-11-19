@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { Courier } from "@/lib/types";
 import { InstallButton } from "./InstallApp";
+import ForgotPassword, { TermsCheckbox } from "./ForgotPassword";
 
 interface Props {
   onAuthenticated: (courier: Courier, token: string) => void;
@@ -30,6 +31,8 @@ const VEHICLE_OPTIONS = [
 
 export default function AuthScreen({ onAuthenticated, onBack }: Props) {
   const [vehicle, setVehicle] = useState<(typeof VEHICLE_OPTIONS)[number]["id"]>("moto");
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [view, setView] = useState<View>("home");
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -152,7 +155,11 @@ export default function AuthScreen({ onAuthenticated, onBack }: Props) {
     else if (password !== password2) e.password2 = "As senhas não são iguais";
     setErrors(e);
     if (Object.keys(e).length) return;
-    const r = await call({ action: "register", email: form.email.trim(), name: form.name.trim(), password, vehicleType: vehicle });
+    if (!acceptTerms) {
+      setServerError("Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.");
+      return;
+    }
+    const r = await call({ action: "register", email: form.email.trim(), name: form.name.trim(), password, vehicleType: vehicle, acceptTerms });
     if (r) onAuthenticated(r.courier, r.token);
   };
 
@@ -281,9 +288,10 @@ export default function AuthScreen({ onAuthenticated, onBack }: Props) {
                     </button>
                   </div>
                 </Field>
-                <p className="text-[11px] leading-snug text-zinc-500">
-                  Já tinha cadastro antes das senhas? Digite uma senha nova: ela passa a ser a sua.
-                </p>
+                <button onClick={() => setForgotOpen(true)} className="text-[13px] font-bold text-lime-300">
+                  Esqueci minha senha
+                </button>
+                {forgotOpen && <ForgotPassword accountType="courier" initialEmail={loginEmail} onClose={() => setForgotOpen(false)} />}
                 <ErrorBox msg={serverError} />
                 <button
                   onClick={doLogin}
@@ -363,6 +371,7 @@ export default function AuthScreen({ onAuthenticated, onBack }: Props) {
                   </p>
                 </div>
 
+                <TermsCheckbox checked={acceptTerms} onChange={setAcceptTerms} />
                 <ErrorBox msg={serverError} />
                 <button
                   onClick={submitSimple}

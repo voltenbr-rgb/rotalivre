@@ -1,3 +1,4 @@
+import { localDayStart, tzFrom, tzOffsetMs } from "@/lib/tz";
 import { NextResponse } from "next/server";
 import { forCourier } from "@/lib/delivery";
 import { db } from "@/db";
@@ -10,8 +11,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const main = await getSessionCourier(req);
   if (!main) return unauthorized();
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+  const off = tzOffsetMs(tzFrom(req));
+  const start = new Date(localDayStart(Date.now(), off));
 
   const todayTx = await db
     .select()
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
 
   const firstTx = todayTx.length
     ? Math.min(...todayTx.map((t) => t.createdAt.getTime()))
-    : new Date().setHours(10, 0, 0, 0);
+    : start.getTime() + 10 * 3600000;
   const hoursOnline = Math.max(1, Math.min(12, (Date.now() - firstTx) / 3600000));
   const hourlyAverage = net / hoursOnline;
 

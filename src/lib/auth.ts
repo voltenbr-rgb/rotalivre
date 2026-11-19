@@ -58,7 +58,8 @@ export async function getSessionCourier(req: Request) {
       ),
     )
     .limit(1);
-  return rows[0]?.courier ?? null;
+  const c = rows[0]?.courier ?? null;
+  return c && !c.blocked ? c : null;
 }
 
 /** Conta da sessão de um tipo específico (loja ou master) */
@@ -78,7 +79,8 @@ export async function getSessionStore(req: Request) {
   const s = await sessionOf(req, "store");
   if (!s) return null;
   const rows = await db.select().from(stores).where(eq(stores.id, s.accountId)).limit(1);
-  return rows[0] ?? null;
+  const st = rows[0] ?? null;
+  return st && !st.blocked ? st : null;
 }
 
 /** Sessão do painel master (senha master) */
@@ -105,6 +107,11 @@ export function publicStore<T extends { passwordHash?: string | null }>(st: T) {
 export function publicCourier<T extends { passwordHash?: string | null }>(c: T) {
   const { passwordHash: _omit, ...rest } = c;
   return rest;
+}
+
+/** Apaga todas as sessões de uma conta (bloqueio, senha redefinida) */
+export async function deleteAccountSessions(accountType: AccountType, accountId: number) {
+  await db.delete(sessions).where(and(eq(sessions.accountType, accountType), eq(sessions.accountId, accountId)));
 }
 
 export function unauthorized() {

@@ -2,19 +2,18 @@ import { db } from "@/db";
 import { transactions } from "@/db/schema";
 import { and, eq, gte } from "drizzle-orm";
 import type { ReportData } from "./types";
+import { DEFAULT_TZ, localDayStart, localHour, localWeekday, tzOffsetMs } from "./tz";
 
 const DAY = 86400000;
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-export async function computeReport(courierId: number, period: number): Promise<ReportData> {
+export async function computeReport(courierId: number, period: number, tz: string = DEFAULT_TZ): Promise<ReportData> {
   const now = new Date();
+  // "Dia" no fuso do usuário (Corumbá = America/Campo_Grande)
+  const off = tzOffsetMs(tz, now);
+  const startOfDay = (d: Date) => new Date(localDayStart(d.getTime(), off));
+  const label = (t: number, opts: Intl.DateTimeFormatOptions) => new Date(t).toLocaleDateString("pt-BR", { ...opts, timeZone: tz });
   const rangeStart = startOfDay(new Date(now.getTime() - (period - 1) * DAY));
   // Para o trimestral, buscamos 90 dias completos a partir de hoje
   const fetchStart = startOfDay(new Date(now.getTime() - 89 * DAY));
@@ -69,7 +68,7 @@ export async function computeReport(courierId: number, period: number): Promise<
   if (period === 1) {
     hourly = [];
     for (let h = 6; h <= 23; h++) {
-      const list = range.filter((t) => t.createdAt.getHours() === h);
+      const list = range.filter((t) => localHour(t.createdAt.getTime(), off) === h);
       hourly.push({ hour: `${h}h`, net: round2(sumNet(list)), deliveries: deliveriesOf(list) });
     }
     series = hourly.map((x) => ({ label: x.hour, net: x.net, deliveries: x.deliveries, km: 0 }));
@@ -83,7 +82,7 @@ export async function computeReport(courierId: number, period: number): Promise<
       const d = startOfDay(new Date(now.getTime() - i * DAY));
       const list = byDay.get(d.getTime()) ?? [];
       series.push({
-        label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        label: label(d.getTime(), { day: "2-digit", month: "2-digit" }),
         net: round2(sumNet(list)),
         deliveries: deliveriesOf(list),
         km: round2(sumKm(list)),
@@ -96,7 +95,7 @@ export async function computeReport(courierId: number, period: number): Promise<
       const weekEnd = startOfDay(new Date(now.getTime() - w * 7 * DAY));
       const list = range.filter((t) => dayKey(t.createdAt) >= weekStart.getTime() && dayKey(t.createdAt) <= weekEnd.getTime() + DAY - 1);
       series.push({
-        label: weekStart.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        label: label(weekStart.getTime(), { day: "2-digit", month: "2-digit" }),
         net: round2(sumNet(list)),
         deliveries: deliveriesOf(list),
         km: round2(sumKm(list)),
@@ -111,7 +110,7 @@ export async function computeReport(courierId: number, period: number): Promise<
     if (net > bestNet) {
       bestNet = net;
       bestDay = {
-        label: new Date(k).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }),
+        label: label(k, { weekday: "short", day: "2-digit", month: "2-digit" }),
         net: round2(net),
       };
     }
@@ -132,7 +131,7 @@ export async function computeReport(courierId: number, period: number): Promise<
   if (period === 30) {
     const byWeekday = new Map<number, { total: number; days: Set<number> }>();
     for (const [k, list] of byDay) {
-      const wd = new Date(k).getDay();
+      const wd = localWeekday(k, off);
       if (!byWeekday.has(wd)) byWeekday.set(wd, { total: 0, days: new Set() });
       const e = byWeekday.get(wd)!;
       e.total += sumNet(list);
@@ -141,7 +140,7 @@ export async function computeReport(courierId: number, period: number): Promise<
     // conta ocorrências de cada dia da semana na janela
     const counts = new Map<number, number>();
     for (let i = 0; i < 30; i++) {
-      const wd = new Date(now.getTime() - i * DAY).getDay();
+      const wd = localWeekday(now.getTime() - i * DAY, off);
       counts.set(wd, (counts.get(wd) ?? 0) + 1);
     }
     bestWeekdays = [1, 2, 3, 4, 5, 6, 0]

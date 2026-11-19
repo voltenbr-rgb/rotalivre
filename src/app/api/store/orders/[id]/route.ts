@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { getSessionStore, unauthorized } from "@/lib/auth";
 import { completeDelivery } from "@/lib/delivery";
+import { fmtBRL, fmtKm } from "@/lib/format";
+import { inBackground, notifyCouriersNear } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,38 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!st) return unauthorized();
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+
+  // Pedido parado: loja aumenta o valor em R$ 2 e avisa de novo os entregadores
+  if (body.action === "raise") {
+    const [cur] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, parseInt(id)), eq(orders.storeId, st.id), eq(orders.status, "available")))
+      .limit(1);
+    if (!cur) return NextResponse.json({ error: "Esse pedido já foi aceito ou encerrado" }, { status: 409 });
+    const valueNet = Math.round((cur.valueNet + 2) * 100) / 100;
+    if (valueNet > 500) return NextResponse.json({ error: "Valor máximo é R$ 500" }, { status: 400 });
+    await db
+      .update(orders)
+      .set({ valueNet, renotifiedAt: new Date() })
+      .where(and(eq(orders.id, cur.id), eq(orders.status, "available")));
+    inBackground(
+      notifyCouriersNear(
+        cur.pickupLat,
+        cur.pickupLng,
+        12,
+        {
+          title: `💰 Valor aumentou: ${fmtBRL(valueNet)} • ${cur.establishment}`,
+          body: `${cur.pickupNeighborhood || "Coleta"} → ${cur.deliveryNeighborhood || cur.deliveryAddress} • ${fmtKm(cur.distanceKm)}`,
+          url: "/",
+          tag: "corrida",
+        },
+        { respectGap: false, vehicles: cur.acceptedVehicles ?? "todos" },
+      ),
+    );
+    return NextResponse.json({ ok: true, valueNet });
+  }
+
   if (body.action !== "confirm_delivered") return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   const [order] = await db
     .select()

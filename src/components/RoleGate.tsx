@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, Bike, KeyRound, LoaderCircle, Lock, LogIn, Mail, Store as StoreIcon, UserPlus } from "lucide-react";
 import AuthScreen from "./AuthScreen";
 import { InstallButton } from "./InstallApp";
+import ForgotPassword, { TermsCheckbox } from "./ForgotPassword";
 import type { Courier, Store } from "@/lib/types";
 
 const inputCls =
@@ -111,6 +112,8 @@ function StoreAuth({ onBack, onDone }: { onBack: () => void; onDone: (s: Store, 
   const [password2, setPassword2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
 
   const submit = async () => {
     setError("");
@@ -118,12 +121,16 @@ function StoreAuth({ onBack, onDone }: { onBack: () => void; onDone: (s: Store, 
       setError("As senhas não são iguais");
       return;
     }
+    if (mode === "register" && !acceptTerms) {
+      setError("Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/store/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: mode, email, password }),
+        body: JSON.stringify({ action: mode, email, password, acceptTerms }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -177,6 +184,13 @@ function StoreAuth({ onBack, onDone }: { onBack: () => void; onDone: (s: Store, 
             autoComplete="new-password"
           />
         )}
+        {mode === "register" && <TermsCheckbox checked={acceptTerms} onChange={setAcceptTerms} />}
+        {mode === "login" && (
+          <button onClick={() => setForgotOpen(true)} className="text-[13px] font-bold text-amber-300">
+            Esqueci minha senha
+          </button>
+        )}
+        {forgotOpen && <ForgotPassword accountType="store" initialEmail={email} onClose={() => setForgotOpen(false)} />}
         {error && <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
         <button
           onClick={submit}

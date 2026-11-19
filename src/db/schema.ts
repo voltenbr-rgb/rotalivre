@@ -48,6 +48,9 @@ export const couriers = sqliteTable("couriers", {
   passwordHash: text("password_hash"),
   // moto | bicicleta | scooter | carro
   vehicleType: text("vehicle_type").notNull().default("moto"),
+  // Bloqueado pelo painel master (não entra no app)
+  blocked: bool("blocked").notNull().default(false),
+  termsAcceptedAt: ts("terms_accepted_at"),
   // Última posição real (GPS do celular), atualizada pelo app durante o turno
   lastLat: real("last_lat"),
   lastLng: real("last_lng"),
@@ -93,6 +96,10 @@ export const orders = sqliteTable("orders", {
   // Código de 4 dígitos que só a loja e o cliente sabem; fecha a entrega
   deliveryCode: text("delivery_code"),
   deliveryCodeAttempts: integer("delivery_code_attempts").notNull().default(0),
+  // Link público de acompanhamento para o cliente (/acompanhar/<token>)
+  publicToken: text("public_token"),
+  // Quando o pedido parado foi reavisado (raio maior)
+  renotifiedAt: ts("renotified_at"),
   notes: text("notes").notNull().default(""),
   createdAt: ts("created_at").notNull().$defaultFn(now),
   acceptedAt: ts("accepted_at"),
@@ -205,6 +212,33 @@ export const stores = sqliteTable("stores", {
   city: text("city").notNull().default(""),
   lat: real("lat"),
   lng: real("lng"),
+  blocked: bool("blocked").notNull().default(false),
+  termsAcceptedAt: ts("terms_accepted_at"),
   createdAt: ts("created_at").notNull().$defaultFn(now),
   updatedAt: ts("updated_at").notNull().$defaultFn(now),
+});
+
+/* ------------------------------------------------------------------ */
+/* Proteção de login: 5 erros seguidos = espera de 10 minutos           */
+/* key = "<tipo>:<email>" (courier, store ou admin)                     */
+/* ------------------------------------------------------------------ */
+export const loginGuard = sqliteTable("login_guard", {
+  key: text("key").primaryKey(),
+  fails: integer("fails").notNull().default(0),
+  lockedUntil: ts("locked_until"),
+});
+
+/* ------------------------------------------------------------------ */
+/* Pedidos de suporte (ex.: "esqueci minha senha"), vistos no master   */
+/* ------------------------------------------------------------------ */
+export const supportRequests = sqliteTable("support_requests", {
+  id: id(),
+  accountType: text("account_type").notNull(), // courier | store
+  email: text("email").notNull(),
+  contact: text("contact").notNull().default(""),
+  message: text("message").notNull().default(""),
+  kind: text("kind").notNull().default("senha"),
+  status: text("status").notNull().default("aberto"), // aberto | resolvido
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+  resolvedAt: ts("resolved_at"),
 });

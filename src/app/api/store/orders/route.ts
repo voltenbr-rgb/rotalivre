@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { couriers, orders } from "@/db/schema";
 import { getSessionStore, unauthorized } from "@/lib/auth";
 import { haversineKm, orderCode } from "@/lib/domain";
 import { fmtBRL, fmtKm } from "@/lib/format";
 import { inBackground, notifyCouriersNear } from "@/lib/push";
-import { newDeliveryCode } from "@/lib/delivery";
+import { newDeliveryCode, newPublicToken } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
 
 const VEHICLES = ["moto", "bicicleta", "scooter", "carro"];
 /** Avisa entregadores com o sino ligado a até 6 km da loja */
 const NOTIFY_KM = 6;
+/** Pedido parado: depois de 5 min sem ninguém aceitar, avisa de novo num raio maior */
+const STALE_MIN = 5;
+const RENOTIFY_KM = 12;
+
 
 function iso(d: Date | null) {
   return d ? d.toISOString() : null;
@@ -24,7 +28,13 @@ export async function GET(req: Request) {
   if (!st) return unauthorized();
   const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   const rows = await db
-    .select({ o: orders, c: { name: couriers.name, nickname: couriers.nickname, phone: couriers.phone, vehicleType: couriers.vehicleType } })
+    .select({
+      o: orders,
+      c: {
+        name: couriers.name, nickname: couriers.nickname, phone: couriers.phone, vehicleType: couriers.vehicleType,
+        lastLat: couriers.lastLat, lastLng: couriers.lastLng, lastSeenAt: couriers.lastSeenAt,
+      },
+    })
     .from(orders)
     .leftJoin(couriers, eq(couriers.id, orders.courierId))
     .where(and(eq(orders.storeId, st.id), gte(orders.createdAt, since)))
@@ -32,8 +42,48 @@ export async function GET(req: Request) {
     .limit(60);
 
   const now = Date.now();
+
+  // Pedidos sem link de acompanhamento (anteriores a esta versão) ganham um agora
+  for (const { o } of rows) {
+    if (!o.publicToken && (o.status === "available" || o.status === "accepted" || o.status === "picked_up")) {
+      o.publicToken = newPublicToken();
+      await db.update(orders).set({ publicToken: o.publicToken }).where(and(eq(orders.id, o.id), isNull(orders.publicToken)));
+    }
+  }
+
+  // Pedido que ninguém pegou em 5 min: avisa de novo, num raio de 12 km (uma vez)
+  for (const { o } of rows) {
+    const age = now - o.createdAt.getTime();
+    if (o.status === "available" && !o.renotifiedAt && age > STALE_MIN * 60000 && age < 3 * 3600000) {
+      const [marked] = await db
+        .update(orders)
+        .set({ renotifiedAt: new Date() })
+        .where(and(eq(orders.id, o.id), isNull(orders.renotifiedAt), eq(orders.status, "available")))
+        .returning({ id: orders.id });
+      if (marked) {
+        o.renotifiedAt = new Date();
+        inBackground(
+          notifyCouriersNear(
+            o.pickupLat,
+            o.pickupLng,
+            RENOTIFY_KM,
+            {
+              title: `⏳ Ainda sem entregador • ${o.establishment} • ${fmtBRL(o.valueNet)}`,
+              body: `${o.pickupNeighborhood || "Coleta"} → ${o.deliveryNeighborhood || o.deliveryAddress} • ${fmtKm(o.distanceKm)}`,
+              url: "/",
+              tag: "corrida",
+            },
+            { respectGap: false, vehicles: o.acceptedVehicles ?? "todos" },
+          ),
+        );
+      }
+    }
+  }
+
   const list = rows.map(({ o, c }) => ({
     ...o,
+    renotifiedAt: iso(o.renotifiedAt),
+    waitingMinutes: o.status === "available" ? Math.floor((now - o.createdAt.getTime()) / 60000) : 0,
     // Pedido de loja disponível há mais de 3 h é considerado expirado
     status: o.status === "available" && now - o.createdAt.getTime() > 3 * 3600 * 1000 ? "expired" : o.status,
     ratePerKm: Math.round((o.valueNet / o.distanceKm) * 100) / 100,
@@ -45,6 +95,11 @@ export async function GET(req: Request) {
     courierNickname: c?.nickname ?? null,
     courierPhone: c?.phone ?? null,
     courierVehicle: c?.vehicleType ?? null,
+    // Posição ao vivo do entregador só enquanto ele está com o pedido
+    courierPos:
+      c && (o.status === "accepted" || o.status === "picked_up") && c.lastLat != null && c.lastLng != null
+        ? { lat: c.lastLat, lng: c.lastLng, seenAt: iso(c.lastSeenAt) }
+        : null,
   }));
   return NextResponse.json({ orders: list });
 }
@@ -104,6 +159,7 @@ export async function POST(req: Request) {
       storeId: st.id,
       acceptedVehicles,
       deliveryCode: newDeliveryCode(),
+      publicToken: newPublicToken(),
       status: "available",
     })
     .returning();

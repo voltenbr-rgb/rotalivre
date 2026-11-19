@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { computeReport } from "@/lib/reports";
+import { tzFrom } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,6 @@ export async function GET(req: Request) {
   if (!main) return unauthorized();
   const period = parseInt(new URL(req.url).searchParams.get("period") ?? "1");
   const valid = [1, 15, 30, 90].includes(period) ? period : 1;
-  const report = await computeReport(main.id, valid);
+  const report = await computeReport(main.id, valid, tzFrom(req));
   return NextResponse.json({ report });
 }

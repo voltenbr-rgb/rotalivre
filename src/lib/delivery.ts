@@ -48,3 +48,10 @@ export function forCourier<T extends { deliveryCode?: string | null; deliveryCod
   const { deliveryCode, deliveryCodeAttempts: _a, ...rest } = o;
   return { ...rest, needsCode: !!deliveryCode };
 }
+
+/** Token do link de acompanhamento do cliente (/acompanhar/<token>) */
+export function newPublicToken() {
+  const b = new Uint8Array(12);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}

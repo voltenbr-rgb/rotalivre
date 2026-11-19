@@ -67,5 +67,17 @@ export async function apiFetch(input: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    headers.set("X-Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch {}
   return fetch(input, { ...init, headers });
+}
+
+/** Fuso do aparelho, para links de exportação (?tz=) */
+export function deviceTz() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "America/Campo_Grande";
+  }
 }

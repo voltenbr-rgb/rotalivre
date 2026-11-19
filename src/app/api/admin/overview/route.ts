@@ -1,18 +1,20 @@
 import { NextResponse } from "next/server";
 import { desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { couriers, orders, stores } from "@/db/schema";
+import { couriers, orders, stores, supportRequests } from "@/db/schema";
 import { isAdmin, unauthorized } from "@/lib/auth";
+import { localDayStart, tzFrom, tzOffsetMs } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
 /** Visão geral do ecossistema: lojas, entregadores e pedidos reais */
 export async function GET(req: Request) {
   if (!(await isAdmin(req))) return unauthorized();
-  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+  // "Hoje" no fuso de quem abre o painel
+  const dayAgo = new Date(localDayStart(Date.now(), tzOffsetMs(tzFrom(req))));
   const tenMin = Date.now() - 10 * 60 * 1000;
 
-  const [storeRows, courierRows, recent, today] = await Promise.all([
+  const [storeRows, courierRows, recent, today, support] = await Promise.all([
     db.select().from(stores).orderBy(desc(stores.createdAt)).limit(200),
     db.select().from(couriers).orderBy(desc(couriers.createdAt)).limit(300),
     db
@@ -31,6 +33,7 @@ export async function GET(req: Request) {
       })
       .from(orders)
       .where(sql`${orders.storeId} is not null and ${orders.createdAt} >= ${dayAgo.getTime()}`),
+    db.select().from(supportRequests).orderBy(desc(supportRequests.createdAt)).limit(50),
   ]);
 
   return NextResponse.json({
@@ -41,7 +44,18 @@ export async function GET(req: Request) {
       ordersToday: Number(today[0]?.total ?? 0),
       deliveredToday: Number(today[0]?.delivered ?? 0),
       valueToday: Number(today[0]?.value ?? 0),
+      supportOpen: support.filter((r) => r.status === "aberto").length,
     },
+    support: support.map((r) => ({
+      id: r.id,
+      accountType: r.accountType,
+      email: r.email,
+      contact: r.contact,
+      message: r.message,
+      kind: r.kind,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+    })),
     stores: storeRows.map((s) => ({
       id: s.id,
       name: s.name || "(sem nome)",
@@ -49,6 +63,7 @@ export async function GET(req: Request) {
       category: s.category,
       city: s.city,
       located: s.lat != null,
+      blocked: s.blocked,
       createdAt: s.createdAt.toISOString(),
     })),
     couriers: courierRows.map((c) => ({
@@ -58,6 +73,7 @@ export async function GET(req: Request) {
       email: c.email,
       vehicleType: c.vehicleType,
       status: c.status,
+      blocked: c.blocked,
       city: c.city,
       lastSeenAt: c.lastSeenAt?.toISOString() ?? null,
       createdAt: c.createdAt.toISOString(),

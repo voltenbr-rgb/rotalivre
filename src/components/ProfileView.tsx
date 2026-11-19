@@ -9,6 +9,7 @@ import type { Courier } from "@/lib/types";
 import { fmtNum, initialsOf } from "@/lib/format";
 import { apiFetch } from "@/lib/session";
 import { InstallButton } from "./InstallApp";
+import { ChangePassword } from "./ForgotPassword";
 
 interface Props {
   courier: Courier;
@@ -350,6 +351,7 @@ export default function ProfileView({ courier, onSaved, onLogout, notify, onOpen
           conferir relatórios e extratos na tela grande.
         </p>
         <InstallButton className="h-12 w-full text-sm" />
+        <ChangePassword endpoint="/api/auth" notify={notify} />
         {onOpenTutorial && (
           <button
             onClick={onOpenTutorial}

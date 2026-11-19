@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { couriers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { MAIN_BASE } from "@/lib/domain";
-import { createSession, deleteSession, publicCourier } from "@/lib/auth";
+import { createSession, deleteSession, getSessionCourier, publicCourier, unauthorized } from "@/lib/auth";
+import { clearFails, failMessage, lockedMessage, lockStatus, registerFail } from "@/lib/loginGuard";
 import { hashPassword, validatePassword, verifyPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "change_password") {
+    const me = await getSessionCourier(req);
+    if (!me) return unauthorized();
+    if (!(await verifyPassword(String(body.current ?? ""), me.passwordHash))) {
+      return NextResponse.json({ error: "Senha atual incorreta" }, { status: 400 });
+    }
+    const err = validatePassword(String(body.next ?? ""));
+    if (err) return NextResponse.json({ error: err }, { status: 400 });
+    await db.update(couriers).set({ passwordHash: await hashPassword(String(body.next)) }).where(eq(couriers.id, me.id));
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "login") {
     const email = String(body.email ?? "").trim().toLowerCase();
     if (!email) return NextResponse.json({ error: "Informe seu e-mail" }, { status: 400 });
@@ -35,6 +48,12 @@ export async function POST(req: Request) {
     }
     const user = rows[0];
     const password = String(body.password ?? "");
+    const guardKey = `courier:${email}`;
+    const lock = await lockStatus(guardKey);
+    if (lock.locked) return NextResponse.json({ error: lockedMessage(lock.minutes), locked: true }, { status: 429 });
+    if (user.blocked) {
+      return NextResponse.json({ error: "Conta bloqueada. Fale com o suporte do RotaLivre." }, { status: 403 });
+    }
     if (!user.passwordHash) {
       // Primeiro acesso de conta criada antes das senhas: define a senha agora
       const err = validatePassword(password);
@@ -43,8 +62,10 @@ export async function POST(req: Request) {
       }
       await db.update(couriers).set({ passwordHash: await hashPassword(password) }).where(eq(couriers.id, user.id));
     } else if (!(await verifyPassword(password, user.passwordHash))) {
-      return NextResponse.json({ error: "Senha incorreta" }, { status: 401 });
+      const f = await registerFail(guardKey);
+      return NextResponse.json({ error: failMessage(f.left), locked: f.locked }, { status: f.locked ? 429 : 401 });
     }
+    await clearFails(guardKey);
     const token = await createSession(user.id);
     return NextResponse.json({ courier: publicCourier(user), token });
   }
@@ -60,6 +81,9 @@ export async function POST(req: Request) {
     const plate = String(body.vehiclePlate ?? "").trim().toUpperCase().replace("-", "");
     if (plate && !(/^[A-Z]{3}\d{4}$/.test(plate) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(plate))) {
       return NextResponse.json({ error: "Placa inválida (use AAA0000 ou AAA0A00)" }, { status: 400 });
+    }
+    if (body.acceptTerms !== true) {
+      return NextResponse.json({ error: "Para criar a conta, aceite os Termos de Uso e a Política de Privacidade" }, { status: 400 });
     }
     const password = String(body.password ?? "");
     const pwErr = validatePassword(password);
@@ -79,6 +103,7 @@ export async function POST(req: Request) {
         name,
         nickname: String(body.nickname ?? "").trim() || name.split(" ")[0],
         vehicleType,
+        termsAcceptedAt: new Date(),
         email,
         phone: String(body.phone ?? ""),
         cpf: String(body.cpf ?? ""),

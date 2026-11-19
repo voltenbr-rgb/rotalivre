@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
-  CircleCheck, ClipboardList, Clock, Copy, LoaderCircle, LocateFixed, LogOut, MapPin, MessageCircle,
+  Bell, CircleCheck, ClipboardList, Clock, Copy, Link2, LoaderCircle, Map as MapIcon, LocateFixed, LogOut, MapPin, MessageCircle,
   Package, Phone, Plus, Save, Store as StoreIcon, Trash2, User,
 } from "lucide-react";
 import PointPicker from "./PointPicker";
 import { InstallBanner, InstallButton } from "./InstallApp";
+import { ChangePassword } from "./ForgotPassword";
 import { apiFetch } from "@/lib/session";
 import { fmtBRL, fmtKm } from "@/lib/format";
 import { haversineKm } from "@/lib/domain";
@@ -21,6 +23,42 @@ export const STORE_CATEGORIES = [
   { id: "Padaria", emoji: "🥖" }, { id: "Sobremesas", emoji: "🍨" }, { id: "Mercado", emoji: "🛒" },
   { id: "Farmácia", emoji: "💊" }, { id: "Saudável", emoji: "🥗" }, { id: "Outro", emoji: "🏪" },
 ];
+const LiveMap = dynamic(() => import("./LiveMap"), { ssr: false });
+
+/** Avisos de cada etapa para a loja */
+const STAGE_ALERT: Record<string, string> = {
+  accepted: "🛵 {c} aceitou o pedido {code} e está indo à loja",
+  picked_up: "📦 {c} retirou o pedido {code} — saiu para entrega",
+  delivered: "✅ Pedido {code} entregue!",
+  expired: "⚠ Ninguém aceitou o pedido {code}",
+};
+
+function beep(times = 2) {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    for (let i = 0; i < times; i++) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = i % 2 ? 1320 : 880;
+      const t0 = ctx.currentTime + i * 0.22;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+      o.connect(g).connect(ctx.destination);
+      o.start(t0);
+      o.stop(t0 + 0.2);
+    }
+    setTimeout(() => ctx.close(), 1200);
+  } catch { /* sem áudio */ }
+  try { navigator.vibrate?.([120, 80, 120]); } catch { /* */ }
+}
+
+function trackUrl(token: string) {
+  return `${window.location.origin}/acompanhar/${token}`;
+}
+
 const emojiOf = (c: string) => STORE_CATEGORIES.find((x) => x.id === c)?.emoji ?? "🏪";
 
 const VEHICLES = [
@@ -54,19 +92,61 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
   const [tab, setTab] = useState<Tab>(ready ? "novo" : "loja");
   const [orders, setOrders] = useState<StoreOrder[]>([]);
 
+  const prevStatus = useRef<Map<number, string> | null>(null);
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+
   const loadOrders = useCallback(async () => {
     try {
       const res = await apiFetch("/api/store/orders");
-      if (res.ok) setOrders((await res.json()).orders ?? []);
+      if (!res.ok) return;
+      const list: StoreOrder[] = (await res.json()).orders ?? [];
+      // Compara com a leitura anterior: avisa a loja em cada etapa
+      const prev = prevStatus.current;
+      if (prev) {
+        for (const o of list) {
+          const before = prev.get(o.id);
+          if (before && before !== o.status && STAGE_ALERT[o.status]) {
+            const msg = STAGE_ALERT[o.status]
+              .replace("{c}", o.courierNickname || o.courierName || "O entregador")
+              .replace("{code}", o.code);
+            beep(o.status === "delivered" ? 3 : 2);
+            notifyRef.current(msg, o.status === "expired" ? "warn" : "ok");
+            try {
+              if (document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
+                const reg = await navigator.serviceWorker?.getRegistration();
+                if (reg) reg.showNotification("RotaLivre • " + (STATUS[o.status]?.label ?? "Pedido"), { body: msg, tag: `loja-${o.id}`, icon: "/icons/icon-192.png" });
+                else new Notification("RotaLivre", { body: msg });
+              }
+            } catch { /* sem notificação */ }
+          }
+        }
+      }
+      prevStatus.current = new Map(list.map((o) => [o.id, o.status]));
+      setOrders(list);
     } catch { /* mantém */ }
   }, []);
 
   useEffect(() => {
     if (!ready) return;
     loadOrders();
-    const t = setInterval(loadOrders, 10000);
+    const t = setInterval(loadOrders, 8000);
     return () => clearInterval(t);
   }, [ready, loadOrders]);
+
+  const [notifPerm, setNotifPerm] = useState<string>("default");
+  useEffect(() => {
+    if ("Notification" in window) setNotifPerm(Notification.permission);
+  }, []);
+  const askNotif = async () => {
+    if (!("Notification" in window)) return notify("Este navegador não mostra avisos", "warn");
+    const p = await Notification.requestPermission();
+    setNotifPerm(p);
+    if (p === "granted") {
+      beep(1);
+      notify("Pronto! A loja vai ser avisada de cada etapa.");
+    }
+  };
 
   const active = orders.filter((o) => ["available", "accepted", "picked_up"].includes(o.status)).length;
 
@@ -134,11 +214,27 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
             }}
           />
         )}
-        {tab === "pedidos" && ready && <OrdersList orders={orders} reload={loadOrders} notify={notify} />}
+        {tab === "pedidos" && ready && (
+          <>
+            {notifPerm !== "granted" && (
+              <button
+                onClick={askNotif}
+                className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-left"
+              >
+                <Bell className="h-5 w-5 shrink-0 text-amber-300" />
+                <span className="text-[13px] leading-snug text-amber-100">
+                  <b>Ativar avisos da loja</b> — toque para ser avisado (som + notificação) quando o entregador aceitar, retirar e entregar.
+                </span>
+              </button>
+            )}
+            <OrdersList orders={orders} reload={loadOrders} notify={notify} />
+          </>
+        )}
 
         {tab === "loja" && ready && (
           <div className="mt-6 space-y-3">
             <InstallButton className="h-12 w-full text-sm" />
+            <ChangePassword endpoint="/api/store/auth" notify={notify} />
             <p className="text-center text-[11px] text-zinc-600">Logado como {store.email}</p>
           </div>
         )}
@@ -481,6 +577,32 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
     reload();
   };
 
+  const [mapOpen, setMapOpen] = useState<number | null>(null);
+
+  const raise = async (id: number) => {
+    const res = await apiFetch(`/api/store/orders/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "raise" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    notify(res.ok ? `Valor aumentado para ${fmtBRL(data.valueNet)} — entregadores avisados de novo` : data.error ?? "Não foi possível", res.ok ? "ok" : "warn");
+    reload();
+  };
+
+  const shareTrack = async (o: StoreOrder) => {
+    if (!o.publicToken) return notify("Link ainda sendo gerado, tente em instantes", "warn");
+    const url = trackUrl(o.publicToken);
+    const text = `Acompanhe seu pedido ${o.code} da ${o.establishment} ao vivo: ${url}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Acompanhe seu pedido", text, url });
+        return;
+      }
+    } catch { /* cancelou */ return; }
+    copyText(url, notify);
+  };
+
   const cancel = async (id: number) => {
     const res = await apiFetch(`/api/store/orders/${id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
@@ -505,10 +627,13 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
         const wa = o.courierPhone ? `https://wa.me/55${o.courierPhone.replace(/\D/g, "")}` : null;
         const open = ["available", "accepted", "picked_up"].includes(o.status);
         // Mensagem pronta para o cliente com o código de entrega
+        const link = o.publicToken && typeof window !== "undefined" ? trackUrl(o.publicToken) : "";
         const clientMsg = encodeURIComponent(
           `Olá, ${o.clientName}! Seu pedido ${o.code} já está com a gente. ` +
-            `Quando o entregador chegar, informe o código de entrega: ${o.deliveryCode}`,
+            `Quando o entregador chegar, informe o código de entrega: ${o.deliveryCode}` +
+            (link ? `\n\nAcompanhe ao vivo: ${link}` : ""),
         );
+        const stale = o.status === "available" && o.waitingMinutes >= 5;
         const clientWa = o.clientPhone ? `https://wa.me/55${o.clientPhone.replace(/\D/g, "")}?text=${clientMsg}` : `https://wa.me/?text=${clientMsg}`;
         return (
           <article key={o.id} className="rounded-3xl border border-white/8 bg-[#101319] p-4">
@@ -536,6 +661,17 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
                   : o.acceptedVehicles.split(",").map((v) => vehicleLabel(v).toLowerCase()).join(", ")}
               </span>
             </div>
+
+            {stale && (
+              <div className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3">
+                <p className="text-[13px] leading-snug text-amber-100">
+                  ⏳ <b>{o.waitingMinutes} min sem entregador.</b> Já avisamos de novo os entregadores num raio maior. Aumentar o valor ajuda.
+                </p>
+                <button onClick={() => raise(o.id)} className="mt-2 rounded-xl bg-amber-400 px-4 py-2 text-[13px] font-black text-zinc-950 active:scale-95">
+                  + R$ 2,00 na entrega ({fmtBRL(o.valueNet + 2)})
+                </button>
+              </div>
+            )}
 
             {o.deliveryCode && open && (
               <div className="mt-3 flex items-center gap-3 rounded-2xl border border-lime-400/25 bg-lime-400/8 p-3">
@@ -573,6 +709,44 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
                   </a>
                 )}
               </div>
+            )}
+
+            {(o.status === "accepted" || o.status === "picked_up") && (
+              <div className="mt-2">
+                <button
+                  onClick={() => setMapOpen(mapOpen === o.id ? null : o.id)}
+                  className="flex items-center gap-1.5 rounded-xl bg-sky-500/15 px-3 py-2 text-[12px] font-bold text-sky-300"
+                >
+                  <MapIcon className="h-4 w-4" /> {mapOpen === o.id ? "Fechar mapa" : "Ver entregador no mapa ao vivo"}
+                </button>
+                {mapOpen === o.id && (
+                  <div className="mt-2">
+                    {o.courierPos ? (
+                      <>
+                        <LiveMap
+                          pickup={{ lat: o.pickupLat, lng: o.pickupLng }}
+                          delivery={{ lat: o.deliveryLat, lng: o.deliveryLng }}
+                          courier={o.courierPos}
+                          courierEmoji={VEHICLES.find((v) => v.id === o.courierVehicle)?.emoji ?? "🛵"}
+                        />
+                        {o.courierPos.seenAt && (
+                          <p className="mt-1 text-[11px] text-zinc-500">
+                            Posição de {new Date(o.courierPos.seenAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} • atualiza sozinho
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="rounded-xl bg-white/4 p-3 text-[12px] text-zinc-400">O entregador ainda não enviou a localização (GPS desligado ou app fechado).</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {open && o.publicToken && (
+              <button onClick={() => shareTrack(o)} className="mt-2 flex items-center gap-1.5 text-[12px] font-bold text-lime-300">
+                <Link2 className="h-3.5 w-3.5" /> Enviar link de acompanhamento ao cliente
+              </button>
             )}
 
             {o.status === "available" && (
@@ -620,5 +794,5 @@ async function copyText(text: string, notify: Props["notify"]) {
       t.remove();
     }
   }
-  notify(`Código ${text} copiado`);
+  notify(text.startsWith("http") ? "Link copiado — cole no WhatsApp do cliente" : `Código ${text} copiado`);
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminPassword, createSession, deleteSession } from "@/lib/auth";
+import { clearFails, lockedMessage, lockStatus, registerFail } from "@/lib/loginGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,8 @@ export async function POST(req: Request) {
     await deleteSession(req);
     return NextResponse.json({ ok: true });
   }
+  const lock = await lockStatus("admin:master");
+  if (lock.locked) return NextResponse.json({ error: lockedMessage(lock.minutes) }, { status: 429 });
   const given = String(body.password ?? "");
   const expected = adminPassword();
   // Comparação em tempo constante
@@ -19,8 +22,10 @@ export async function POST(req: Request) {
   }
   if (diff !== 0) {
     await new Promise((r) => setTimeout(r, 600)); // freia tentativas
-    return NextResponse.json({ error: "Senha master incorreta" }, { status: 401 });
+    const f = await registerFail("admin:master");
+    return NextResponse.json({ error: f.locked ? lockedMessage(10) : "Senha master incorreta" }, { status: f.locked ? 429 : 401 });
   }
+  await clearFails("admin:master");
   const token = await createSession(0, "admin");
   return NextResponse.json({ token });
 }

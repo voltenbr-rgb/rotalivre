@@ -1,5 +1,6 @@
 import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { computeReport } from "@/lib/reports";
+import { tzFrom } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -9,12 +10,12 @@ export async function GET(req: Request) {
   if (!main) return unauthorized();
   const period = parseInt(new URL(req.url).searchParams.get("period") ?? "30");
   const valid = [1, 15, 30, 90].includes(period) ? period : 30;
-  const report = await computeReport(main.id, valid);
+  const report = await computeReport(main.id, valid, tzFrom(req));
 
   const lines: string[] = [];
   lines.push(`Relatório RotaLivre;Período (dias);${valid}`);
   lines.push(`Entregador;${main.name} (${main.nickname})`);
-  lines.push(`Gerado em;${new Date().toLocaleString("pt-BR")}`);
+  lines.push(`Gerado em;${new Date().toLocaleString("pt-BR", { timeZone: tzFrom(req) })}`);
   lines.push("");
   lines.push("Data;Entregas;Km;Bruto (R$);Taxa transparente (R$);Líquido (R$)");
   for (const s of report.series) {

@@ -1,16 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bike, ClipboardList, KeyRound, LogOut, RefreshCw, Store as StoreIcon } from "lucide-react";
+import { Bike, ClipboardList, Copy, KeyRound, LifeBuoy, LogOut, MessageCircle, RefreshCw, Store as StoreIcon, X } from "lucide-react";
 import { apiFetch } from "@/lib/session";
 import { fmtBRL, fmtKm } from "@/lib/format";
 
 type Overview = {
-  stats: { stores: number; couriers: number; couriersOnline: number; ordersToday: number; deliveredToday: number; valueToday: number };
-  stores: { id: number; name: string; email: string; category: string; city: string; located: boolean; createdAt: string }[];
+  stats: {
+    stores: number; couriers: number; couriersOnline: number; ordersToday: number; deliveredToday: number;
+    valueToday: number; supportOpen: number;
+  };
+  stores: { id: number; name: string; email: string; category: string; city: string; located: boolean; blocked: boolean; createdAt: string }[];
   couriers: {
     id: number; name: string; nickname: string; email: string; vehicleType: string; status: string;
-    city: string; lastSeenAt: string | null; createdAt: string;
+    city: string; blocked: boolean; lastSeenAt: string | null; createdAt: string;
+  }[];
+  support: {
+    id: number; accountType: string; email: string; contact: string; message: string; kind: string; status: string; createdAt: string;
   }[];
   orders: { id: number; code: string; store: string; courier: string | null; status: string; valueNet: number; distanceKm: number; createdAt: string }[];
 };
@@ -25,7 +31,8 @@ const when = (iso: string | null) =>
 /** Painel master: visão geral de lojas, entregadores e pedidos reais */
 export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [data, setData] = useState<Overview | null>(null);
-  const [tab, setTab] = useState<"lojas" | "entregadores" | "pedidos">("lojas");
+  const [tab, setTab] = useState<"suporte" | "lojas" | "entregadores" | "pedidos">("suporte");
+  const [temp, setTemp] = useState<{ email: string; contact: string; password: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -46,6 +53,26 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
   }, [load]);
 
   const s = data?.stats;
+
+  const act = async (body: Record<string, unknown>) => {
+    const res = await apiFetch("/api/admin/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alertBox(out.error ?? "Não foi possível");
+      return null;
+    }
+    load();
+    return out;
+  };
+
+  const resetPassword = async (type: string, email: string, contact = "", requestId?: number) => {
+    const out = await act({ action: "reset_password", type, email, requestId });
+    if (out?.tempPassword) setTemp({ email, contact, password: out.tempPassword });
+  };
 
   return (
     <div className="min-h-dvh bg-[#05070a]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
@@ -75,13 +102,15 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
           <Stat label="Pedidos 24 h" value={s?.ordersToday ?? "—"} />
           <Stat label="Entregues 24 h" value={s?.deliveredToday ?? "—"} />
           <Stat label="Pago a entregadores" value={s ? fmtBRL(s.valueToday) : "—"} />
+          <Stat label="Suporte aberto" value={s?.supportOpen ?? "—"} />
         </section>
 
         <nav className="flex gap-1.5">
           {([
+            { id: "suporte", label: `Suporte${s?.supportOpen ? ` (${s.supportOpen})` : ""}`, icon: LifeBuoy },
             { id: "lojas", label: "Lojas", icon: StoreIcon },
             { id: "entregadores", label: "Entregadores", icon: Bike },
-            { id: "pedidos", label: "Pedidos de lojas", icon: ClipboardList },
+            { id: "pedidos", label: "Pedidos", icon: ClipboardList },
           ] as const).map((t) => (
             <button
               key={t.id}
@@ -96,19 +125,59 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
         </nav>
 
         <section className="space-y-2">
+          {tab === "suporte" &&
+            (data?.support.length ? data.support.map((r) => (
+              <Row
+                key={r.id}
+                title={`${r.kind === "senha" ? "🔑 Esqueceu a senha" : "💬 Suporte"} • ${r.accountType === "store" ? "Loja" : "Entregador"}`}
+                sub={`${r.email} • WhatsApp ${r.contact}${r.message ? ` • “${r.message}”` : ""}`}
+                right={r.status === "aberto" ? "aberto" : "resolvido"}
+                foot={when(r.createdAt)}
+              >
+                {r.status === "aberto" && (
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <ActionBtn onClick={() => resetPassword(r.accountType, r.email, r.contact, r.id)} primary>
+                      Gerar senha provisória
+                    </ActionBtn>
+                    <a href={waLink(r.contact)} target="_blank" rel="noreferrer" className={btnCls(false)}>
+                      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                    </a>
+                    <ActionBtn onClick={() => act({ action: "resolve", requestId: r.id })}>Marcar resolvido</ActionBtn>
+                  </div>
+                )}
+              </Row>
+            )) : <Empty text="Nenhum pedido de suporte" />)}
           {tab === "lojas" &&
             (data?.stores.length ? data.stores.map((x) => (
-              <Row key={x.id} title={x.name} sub={`${x.email} • ${x.category}${x.city ? ` • ${x.city}` : ""}`} right={x.located ? "📍 localizada" : "⚠ sem local"} foot={`Cadastro ${when(x.createdAt)}`} />
+              <Row
+                key={x.id}
+                title={`${x.name}${x.blocked ? " 🚫" : ""}`}
+                sub={`${x.email} • ${x.category}${x.city ? ` • ${x.city}` : ""}`}
+                right={x.blocked ? "bloqueada" : x.located ? "📍 localizada" : "⚠ sem local"}
+                foot={`Cadastro ${when(x.createdAt)}`}
+              >
+                <AccountActions
+                  blocked={x.blocked}
+                  onReset={() => resetPassword("store", x.email)}
+                  onToggle={() => act({ action: x.blocked ? "unblock" : "block", type: "store", id: x.id })}
+                />
+              </Row>
             )) : <Empty text="Nenhuma loja cadastrada ainda" />)}
           {tab === "entregadores" &&
             (data?.couriers.length ? data.couriers.map((x) => (
               <Row
                 key={x.id}
-                title={`${x.name}${x.nickname ? ` “${x.nickname}”` : ""}`}
+                title={`${x.name}${x.nickname ? ` “${x.nickname}”` : ""}${x.blocked ? " 🚫" : ""}`}
                 sub={`${x.email} • ${VEHICLE[x.vehicleType] ?? x.vehicleType}${x.city ? ` • ${x.city}` : ""}`}
-                right={x.status}
+                right={x.blocked ? "bloqueado" : x.status}
                 foot={`Visto ${when(x.lastSeenAt)} • cadastro ${when(x.createdAt)}`}
-              />
+              >
+                <AccountActions
+                  blocked={x.blocked}
+                  onReset={() => resetPassword("courier", x.email)}
+                  onToggle={() => act({ action: x.blocked ? "unblock" : "block", type: "courier", id: x.id })}
+                />
+              </Row>
             )) : <Empty text="Nenhum entregador ainda" />)}
           {tab === "pedidos" &&
             (data?.orders.length ? data.orders.map((x) => (
@@ -122,8 +191,84 @@ export default function AdminPanel({ onLogout }: { onLogout: () => void }) {
             )) : <Empty text="Nenhum pedido de loja ainda" />)}
         </section>
       </main>
+
+      {/* Senha provisória gerada */}
+      {temp && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-6" onClick={() => setTemp(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[360px] rounded-3xl border border-white/10 bg-[#0d1015] p-5">
+            <div className="flex items-start justify-between">
+              <p className="font-display text-lg font-black text-white">Senha provisória</p>
+              <button onClick={() => setTemp(null)} className="text-zinc-500" aria-label="Fechar">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-1 text-[13px] text-zinc-400">{temp.email}</p>
+            <p className="mt-3 rounded-2xl bg-white/6 py-3 text-center font-display text-3xl font-black tracking-[0.3em] text-lime-300">{temp.password}</p>
+            <p className="mt-2 text-[12px] leading-snug text-zinc-500">
+              Os aparelhos dessa conta foram desconectados. Mande a senha para a pessoa e peça para ela trocar no Perfil.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => navigator.clipboard?.writeText(temp.password)} className={btnCls(false)}>
+                <Copy className="h-3.5 w-3.5" /> Copiar
+              </button>
+              <a
+                href={waLink(temp.contact, `Olá! Sua senha provisória do RotaLivre é ${temp.password}. Entre no app e troque em Perfil → Trocar minha senha.`)}
+                target="_blank"
+                rel="noreferrer"
+                className={btnCls(true)}
+              >
+                <MessageCircle className="h-3.5 w-3.5" /> Enviar no WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function waLink(contact: string, text?: string) {
+  const digits = contact.replace(/\D/g, "");
+  const phone = digits ? (digits.startsWith("55") ? digits : `55${digits}`) : "";
+  return `https://wa.me/${phone}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+
+function btnCls(primary: boolean) {
+  return `flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-bold ${
+    primary ? "bg-lime-400 text-zinc-950" : "bg-white/8 text-zinc-200"
+  }`;
+}
+
+function ActionBtn({ onClick, primary = false, children }: { onClick: () => void; primary?: boolean; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} className={btnCls(primary)}>
+      {children}
+    </button>
+  );
+}
+
+function AccountActions({ blocked, onReset, onToggle }: { blocked: boolean; onReset: () => void; onToggle: () => void }) {
+  return (
+    <div className="mt-2.5 flex flex-wrap gap-2">
+      <ActionBtn onClick={onReset}>Redefinir senha</ActionBtn>
+      <button
+        onClick={() => {
+          if (confirmBox(blocked ? "Desbloquear esta conta?" : "Bloquear esta conta? Ela sai de todos os aparelhos.")) onToggle();
+        }}
+        className={`rounded-xl px-3 py-2 text-[12px] font-bold ${blocked ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/15 text-red-300"}`}
+      >
+        {blocked ? "Desbloquear" : "Bloquear"}
+      </button>
+    </div>
+  );
+}
+
+/* O painel master roda no computador: confirm()/alert() nativos são suficientes aqui */
+function confirmBox(msg: string) {
+  return typeof window !== "undefined" ? window.confirm(msg) : false;
+}
+function alertBox(msg: string) {
+  if (typeof window !== "undefined") window.alert(msg);
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
@@ -135,7 +280,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function Row({ title, sub, right, foot }: { title: string; sub: string; right: string; foot: string }) {
+function Row({ title, sub, right, foot, children }: { title: string; sub: string; right: string; foot: string; children?: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-white/8 bg-[#101319] p-3.5">
       <div className="flex items-start justify-between gap-3">
@@ -144,6 +289,7 @@ function Row({ title, sub, right, foot }: { title: string; sub: string; right: s
       </div>
       <p className="mt-0.5 truncate text-[12px] text-zinc-400">{sub}</p>
       <p className="mt-1 text-[11px] text-zinc-600">{foot}</p>
+      {children}
     </div>
   );
 }

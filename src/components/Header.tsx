@@ -122,6 +122,11 @@ export default function Header({ courier, todayNet, onStatusChange, onOpenProfil
                   <p className="mt-1.5 text-xs leading-snug text-zinc-400">
                     Receba no celular cada corrida nova perto de você, mesmo com o app fechado.
                   </p>
+                  {push.isBrave && (
+                    <p className="mt-2 rounded-lg bg-amber-400/10 px-2 py-1.5 text-[11px] leading-snug text-amber-200">
+                      Você está no Brave, que costuma bloquear notificações. Para garantir, abra e instale o RotaLivre pelo Google Chrome.
+                    </p>
+                  )}
                   <button
                     disabled={push.busy}
                     onClick={async () => {

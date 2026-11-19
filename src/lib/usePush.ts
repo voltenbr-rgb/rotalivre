@@ -31,6 +31,12 @@ async function registration() {
 export function usePush() {
   const [state, setState] = useState<PushState>("loading");
   const [busy, setBusy] = useState(false);
+  const [isBrave, setIsBrave] = useState(false);
+
+  useEffect(() => {
+    const nav = navigator as Navigator & { brave?: { isBrave?: () => Promise<boolean> } };
+    nav.brave?.isBrave?.().then((b) => setIsBrave(!!b)).catch(() => null);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -87,11 +93,13 @@ export function usePush() {
       return null;
     } catch {
       await refresh();
-      return "Não foi possível ligar as notificações neste aparelho.";
+      return isBrave
+        ? "O Brave bloqueou as notificações. Abra o RotaLivre no Google Chrome para receber os avisos."
+        : "Não foi possível ligar as notificações neste aparelho. Tente pelo Google Chrome.";
     } finally {
       setBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, isBrave]);
 
   const disable = useCallback(async () => {
     setBusy(true);
@@ -116,5 +124,5 @@ export function usePush() {
     await apiFetch("/api/push/test", { method: "POST" });
   }, []);
 
-  return { state, busy, enable, disable, sendTest };
+  return { state, busy, isBrave, enable, disable, sendTest };
 }

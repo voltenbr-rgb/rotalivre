@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "rotalivre",
-  "main": ".open-next/worker.js",
+  "main": "custom-worker.js",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -22,6 +22,10 @@
       "migrations_dir": "drizzle"
     }
   ],
+  // Simulação de corrida para testar notificações (a cada 30 min). Remover quando houver pedidos reais.
+  "triggers": {
+    "crons": ["*/30 * * * *"]
+  },
   "observability": {
     "enabled": true
   }

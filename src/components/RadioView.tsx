@@ -113,6 +113,22 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
+  // Mensagem minha selecionada (mostra "Apagar para todos")
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  const deleteMessage = async (id: number) => {
+    setSelectedId(null);
+    const before = messages;
+    setMessages((list) => list.filter((m) => m.id !== id)); // some na hora para mim
+    try {
+      const res = await apiFetch(`/api/messages/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      notify("Mensagem apagada para todos");
+    } catch {
+      setMessages(before);
+      notify("Não foi possível apagar. Tente de novo.", "warn");
+    }
+  };
   // Três entradas: câmera traseira, selfie (frontal) e galeria
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const selfieInputRef = useRef<HTMLInputElement>(null);
@@ -300,6 +316,10 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
           setStatusOpen(false);
           setPhotoMenuOpen(false);
         }}
+        onPointerDown={(e) => {
+          // Toque fora de uma mensagem selecionada desmarca
+          if (!(e.target as HTMLElement).closest("[data-msg]")) setSelectedId(null);
+        }}
       >
         {messages.map((m, i) => (
           <MessageBubble
@@ -309,6 +329,9 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
             T={T}
             light={light}
             onOpenPhoto={setViewer}
+            selected={selectedId === m.id}
+            onSelect={() => m.isMe && setSelectedId((cur) => (cur === m.id ? null : m.id))}
+            onDelete={() => deleteMessage(m.id)}
           />
         ))}
         {messages.length === 0 && (
@@ -454,14 +477,37 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
 }
 
 function MessageBubble({
-  m, showName, T, light, onOpenPhoto,
-}: { m: ChatMessage; showName: boolean; T: Theme; light: boolean; onOpenPhoto: (url: string) => void }) {
+  m, showName, T, light, onOpenPhoto, selected, onSelect, onDelete,
+}: {
+  m: ChatMessage;
+  showName: boolean;
+  T: Theme;
+  light: boolean;
+  onOpenPhoto: (url: string) => void;
+  selected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const deleteBar = m.isMe && selected && (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onDelete();
+      }}
+      className="slide-up mt-1 flex items-center gap-1.5 rounded-full bg-red-500 px-3 py-1.5 text-[12px] font-bold text-white shadow-lg active:scale-95"
+    >
+      <Trash2 className="h-3.5 w-3.5" /> Apagar para todos
+    </button>
+  );
   if (m.kind === "alerta") {
     const meta = ALERT_META[m.alertType ?? "risco"];
     const Icon = ALERT_ICONS[m.alertType ?? "risco"];
     return (
-      <div className="slide-up flex justify-center py-1">
-        <div className={`w-full max-w-[90%] rounded-xl border px-3 py-2 ${meta.bg} ${meta.border} ${light ? "bg-white/80" : ""}`}>
+      <div data-msg className="slide-up flex flex-col items-center py-1">
+        <div
+          onClick={onSelect}
+          className={`w-full max-w-[90%] rounded-xl border px-3 py-2 ${meta.bg} ${meta.border} ${light ? "bg-white/80" : ""} ${selected ? "ring-2 ring-red-400" : ""}`}
+        >
           <p className={`flex items-center gap-1.5 text-[11px] font-black tracking-wide uppercase ${meta.color}`}>
             <Icon className="h-3.5 w-3.5" /> {meta.label}
             {m.alertType === "sos" && <span className="ml-auto animate-pulse rounded bg-red-500 px-1.5 text-[9px] text-white">URGENTE</span>}
@@ -472,6 +518,7 @@ function MessageBubble({
             {m.distanceKm != null && ` • a ${m.distanceKm.toString().replace(".", ",")} km`} • {clockTime(m.createdAt)}
           </p>
         </div>
+        {deleteBar}
       </div>
     );
   }
@@ -479,11 +526,12 @@ function MessageBubble({
   const nameColor = (light ? NAME_COLORS_LIGHT : NAME_COLORS)[m.courierId % NAME_COLORS.length];
 
   return (
-    <div className={`slide-up flex ${m.isMe ? "justify-end" : "justify-start"}`}>
+    <div data-msg className={`slide-up flex flex-col ${m.isMe ? "items-end" : "items-start"}`}>
       <div
-        className={`relative max-w-[80%] rounded-xl px-2.5 pt-1.5 pb-1 shadow-sm ${
+        onClick={onSelect}
+        className={`relative max-w-[80%] rounded-xl px-2.5 pt-1.5 pb-1 shadow-sm transition ${
           m.isMe ? `rounded-tr-sm ${T.mine}` : `rounded-tl-sm ${T.theirs}`
-        }`}
+        } ${selected ? "ring-2 ring-red-400" : ""}`}
       >
         {showName && (
           <p className={`text-[12px] font-bold ${nameColor}`}>
@@ -496,7 +544,14 @@ function MessageBubble({
         {m.kind === "foto" ? (
           <div className="pb-4">
             {m.photoUrl ? (
-              <button onClick={() => onOpenPhoto(withToken(m.photoUrl!))} className="block" aria-label="Ver foto">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenPhoto(withToken(m.photoUrl!));
+                }}
+                className="block"
+                aria-label="Ver foto"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={withToken(m.photoUrl)}
@@ -526,6 +581,7 @@ function MessageBubble({
         )}
         <span className={`absolute right-2 bottom-1 text-[10px] ${T.meta}`}>{clockTime(m.createdAt)}</span>
       </div>
+      {deleteBar}
     </div>
   );
 }
@@ -575,7 +631,7 @@ function AudioBubble({ duration, url, seedId, T }: { duration: number; url?: str
 
   return (
     <div className="flex min-w-[210px] items-center gap-2 pr-10 pb-2">
-      <button onClick={toggle} className={`flex h-8 w-8 shrink-0 items-center justify-center ${T.play}`} aria-label={playing ? "Pausar" : "Ouvir"}>
+      <button onClick={(e) => { e.stopPropagation(); toggle(); }} className={`flex h-8 w-8 shrink-0 items-center justify-center ${T.play}`} aria-label={playing ? "Pausar" : "Ouvir"}>
         {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
       </button>
       <span className="flex h-6 flex-1 items-center gap-[2px]">

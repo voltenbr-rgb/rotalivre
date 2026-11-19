@@ -11,6 +11,8 @@ import { InstallButton } from "./InstallApp";
 
 interface Props {
   onAuthenticated: (courier: Courier, token: string) => void;
+  /** Volta para a escolha "Sou lojista / Sou entregador" */
+  onBack?: () => void;
 }
 
 const inputCls =
@@ -19,7 +21,15 @@ const errCls = "border-red-500/60";
 
 type View = "home" | "login" | "register";
 
-export default function AuthScreen({ onAuthenticated }: Props) {
+const VEHICLE_OPTIONS = [
+  { id: "moto", label: "Moto", emoji: "🏍️" },
+  { id: "bicicleta", label: "Bicicleta", emoji: "🚲" },
+  { id: "scooter", label: "Patinete", emoji: "🛴" },
+  { id: "carro", label: "Carro", emoji: "🚗" },
+] as const;
+
+export default function AuthScreen({ onAuthenticated, onBack }: Props) {
+  const [vehicle, setVehicle] = useState<(typeof VEHICLE_OPTIONS)[number]["id"]>("moto");
   const [view, setView] = useState<View>("home");
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -134,6 +144,18 @@ export default function AuthScreen({ onAuthenticated }: Props) {
     return Object.keys(e).length === 0;
   };
 
+  /** Cadastro simples: e-mail, senha e veículo */
+  const submitSimple = async () => {
+    const e: Record<string, string> = {};
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = "E-mail inválido";
+    if (password.length < 6) e.password = "Mínimo de 6 caracteres";
+    else if (password !== password2) e.password2 = "As senhas não são iguais";
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    const r = await call({ action: "register", email: form.email.trim(), name: form.name.trim(), password, vehicleType: vehicle });
+    if (r) onAuthenticated(r.courier, r.token);
+  };
+
   const submitRegister = async () => {
     if (!validateStep()) return;
     const r = await call({ action: "register", ...form, password });
@@ -191,11 +213,12 @@ export default function AuthScreen({ onAuthenticated }: Props) {
 
           {view === "home" && (
             <div className="slide-up">
+              {onBack && <Back onClick={onBack} label="Trocar perfil" />}
               <h2 className="font-display text-[26px] leading-tight font-black text-white">
                 Bora rodar do seu jeito?
               </h2>
               <p className="mt-1.5 text-sm text-zinc-400">
-                Entre na sua conta ou cadastre-se como associado. Leva menos de 2 minutos.
+                Entre na sua conta de entregador ou cadastre-se. Leva menos de 1 minuto.
               </p>
 
               <div className="mt-6 space-y-3">
@@ -203,7 +226,7 @@ export default function AuthScreen({ onAuthenticated }: Props) {
                   onClick={() => setView("register")}
                   className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-lime-400 text-base font-black text-zinc-950 shadow-[0_12px_28px_rgba(163,230,53,0.3)] transition active:scale-[0.98]"
                 >
-                  <UserPlus className="h-5 w-5" /> QUERO SER UM ASSOCIADO
+                  <UserPlus className="h-5 w-5" /> QUERO SER ENTREGADOR
                 </button>
                 <button
                   onClick={() => setView("login")}
@@ -278,193 +301,81 @@ export default function AuthScreen({ onAuthenticated }: Props) {
 
           {view === "register" && (
             <div className="slide-up">
-              <Back
-                onClick={() => (step > 0 ? setStep(step - 1) : setView("home"))}
-                label={step > 0 ? "Voltar etapa" : "Voltar"}
-              />
-              <h2 className="font-display text-2xl font-black text-white">Cadastro de associado</h2>
-              <p className="mt-1 text-sm text-zinc-400">Grátis, sem fidelidade e sem taxa escondida.</p>
+              <Back onClick={() => setView("home")} />
+              <h2 className="font-display text-2xl font-black text-white">Cadastro de entregador</h2>
+              <p className="mt-1 text-sm text-zinc-400">Rapidinho: e-mail, senha e o seu veículo. O resto você completa no Perfil.</p>
+              <div className="mt-5 space-y-3.5">
+                <Field label="Seu nome ou apelido (opcional)" icon={<User className="h-3.5 w-3.5" />}>
+                  <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Ex.: João “Relâmpago”" />
+                </Field>
+                <Field label="E-mail" icon={<Mail className="h-3.5 w-3.5" />} error={errors.email}>
+                  <input
+                    className={`${inputCls} ${errors.email ? errCls : ""}`}
+                    value={form.email}
+                    onChange={(e) => set("email", e.target.value)}
+                    placeholder="voce@email.com"
+                    inputMode="email"
+                    autoComplete="email"
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Senha" icon={<Lock className="h-3.5 w-3.5" />} error={errors.password}>
+                    <input
+                      className={`${inputCls} ${errors.password ? errCls : ""}`}
+                      type="password"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setErrors((x) => ({ ...x, password: "" })); }}
+                      placeholder="mín. 6"
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                  <Field label="Repita a senha" error={errors.password2}>
+                    <input
+                      className={`${inputCls} ${errors.password2 ? errCls : ""}`}
+                      type="password"
+                      value={password2}
+                      onChange={(e) => { setPassword2(e.target.value); setErrors((x) => ({ ...x, password2: "" })); }}
+                      placeholder="de novo"
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                </div>
 
-              {/* Progresso */}
-              <div className="mt-5 flex items-center gap-2">
-                {["Seus dados", "Moto e CNH", "Endereço e raio"].map((label, i) => (
-                  <div key={label} className="flex flex-1 items-center gap-2">
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${
-                        i < step ? "bg-lime-400 text-zinc-950" : i === step ? "bg-lime-400/20 text-lime-300 ring-1 ring-lime-400" : "bg-zinc-800 text-zinc-500"
-                      }`}
-                    >
-                      {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
-                    </span>
-                    <span className={`hidden text-[11px] font-bold sm:block ${i === step ? "text-white" : "text-zinc-500"}`}>{label}</span>
-                    {i < 2 && <span className={`h-px flex-1 ${i < step ? "bg-lime-400/60" : "bg-zinc-800"}`} />}
+                <div>
+                  <p className="mb-2 text-xs font-bold tracking-wide text-zinc-400 uppercase">Com o que você entrega?</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {VEHICLE_OPTIONS.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setVehicle(v.id)}
+                        className={`flex flex-col items-center gap-1 rounded-2xl border py-3 text-[11px] font-bold transition ${
+                          vehicle === v.id ? "border-lime-400 bg-lime-400/12 text-lime-300" : "border-white/10 bg-white/4 text-zinc-400"
+                        }`}
+                      >
+                        <span className="text-2xl leading-none">{v.emoji}</span>
+                        {v.label}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                  <p className="mt-2 text-[11px] leading-snug text-zinc-500">
+                    Cada loja escolhe quais veículos aceita. Bicicleta e patinete não precisam de documento de moto.
+                  </p>
+                </div>
 
-              <div className="mt-6 space-y-3.5">
-                {step === 0 && (
-                  <>
-                    <Field label="Nome completo" icon={<User className="h-3.5 w-3.5" />} error={errors.name}>
-                      <input className={`${inputCls} ${errors.name ? errCls : ""}`} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Ex.: Carlos Silva" />
-                    </Field>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Apelido de guerra">
-                        <input className={inputCls} value={form.nickname} onChange={(e) => set("nickname", e.target.value)} placeholder="Ex.: Relâmpago" />
-                      </Field>
-                      <Field label="Nascimento" icon={<CalendarDays className="h-3.5 w-3.5" />}>
-                        <input type="date" className={inputCls} value={form.birthDate} onChange={(e) => set("birthDate", e.target.value)} />
-                      </Field>
-                    </div>
-                    <Field label="E-mail" icon={<Mail className="h-3.5 w-3.5" />} error={errors.email}>
-                      <input className={`${inputCls} ${errors.email ? errCls : ""}`} value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="voce@email.com" inputMode="email" />
-                    </Field>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Celular (WhatsApp)" icon={<Phone className="h-3.5 w-3.5" />} error={errors.phone}>
-                        <input className={`${inputCls} ${errors.phone ? errCls : ""}`} value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="(11) 90000-0000" inputMode="tel" />
-                      </Field>
-                      <Field label="CPF" error={errors.cpf}>
-                        <input className={`${inputCls} ${errors.cpf ? errCls : ""}`} value={form.cpf} onChange={(e) => set("cpf", e.target.value)} placeholder="000.000.000-00" inputMode="numeric" />
-                      </Field>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Crie uma senha" icon={<Lock className="h-3.5 w-3.5" />} error={errors.password}>
-                        <input
-                          className={`${inputCls} ${errors.password ? errCls : ""}`}
-                          type="password"
-                          value={password}
-                          onChange={(e) => { setPassword(e.target.value); setErrors((x) => ({ ...x, password: "" })); }}
-                          placeholder="mín. 6 caracteres"
-                          autoComplete="new-password"
-                        />
-                      </Field>
-                      <Field label="Repita a senha" error={errors.password2}>
-                        <input
-                          className={`${inputCls} ${errors.password2 ? errCls : ""}`}
-                          type="password"
-                          value={password2}
-                          onChange={(e) => { setPassword2(e.target.value); setErrors((x) => ({ ...x, password2: "" })); }}
-                          placeholder="de novo"
-                          autoComplete="new-password"
-                        />
-                      </Field>
-                    </div>
-                    <p className="text-[11px] text-zinc-500">A foto de perfil você coloca depois, na aba Perfil.</p>
-                  </>
-                )}
-
-                {step === 1 && (
-                  <>
-                    <Field label="Modelo da moto" icon={<Bike className="h-3.5 w-3.5" />} error={errors.vehicleModel}>
-                      <input className={`${inputCls} ${errors.vehicleModel ? errCls : ""}`} value={form.vehicleModel} onChange={(e) => set("vehicleModel", e.target.value)} placeholder="Ex.: Honda CG 160 Titan" />
-                    </Field>
-                    <div className="grid grid-cols-3 gap-3">
-                      <Field label="Placa" error={errors.vehiclePlate}>
-                        <input className={`${inputCls} uppercase ${errors.vehiclePlate ? errCls : ""}`} value={form.vehiclePlate} onChange={(e) => set("vehiclePlate", e.target.value.toUpperCase())} placeholder="ABC1D23" maxLength={8} />
-                      </Field>
-                      <Field label="Ano">
-                        <input className={inputCls} value={form.vehicleYear} onChange={(e) => set("vehicleYear", e.target.value)} placeholder="2022" inputMode="numeric" maxLength={4} />
-                      </Field>
-                      <Field label="Cor">
-                        <input className={inputCls} value={form.vehicleColor} onChange={(e) => set("vehicleColor", e.target.value)} placeholder="Preta" />
-                      </Field>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Número da CNH" icon={<IdCard className="h-3.5 w-3.5" />} error={errors.cnhNumber}>
-                        <input className={`${inputCls} ${errors.cnhNumber ? errCls : ""}`} value={form.cnhNumber} onChange={(e) => set("cnhNumber", e.target.value)} inputMode="numeric" />
-                      </Field>
-                      <Field label="Categoria">
-                        <select className={inputCls} value={form.cnhCategory} onChange={(e) => set("cnhCategory", e.target.value)}>
-                          <option value="A">A — Motos</option>
-                          <option value="AB">AB — Motos e carros</option>
-                          <option value="AC">AC</option>
-                          <option value="AD">AD</option>
-                          <option value="AE">AE</option>
-                        </select>
-                      </Field>
-                    </div>
-                    <Field label="Validade da CNH" icon={<CreditCard className="h-3.5 w-3.5" />}>
-                      <input type="date" className={inputCls} value={form.cnhExpiry} onChange={(e) => set("cnhExpiry", e.target.value)} />
-                    </Field>
-                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500">
-                      <BadgeCheck className="h-3.5 w-3.5 text-emerald-400" /> Categoria A/AB com EAR é necessária para rodar como associado.
-                    </p>
-                  </>
-                )}
-
-                {step === 2 && (
-                  <>
-                    <Field label="CEP" icon={<MapPin className="h-3.5 w-3.5" />} error={errors.cep} hint="Preenchemos o endereço automaticamente">
-                      <div className="relative">
-                        <input
-                          className={`${inputCls} pr-11 ${errors.cep ? errCls : ""}`}
-                          value={form.cep}
-                          onChange={(e) => set("cep", maskCep(e.target.value))}
-                          onBlur={(e) => lookupCep(e.target.value)}
-                          placeholder="00000-000"
-                          inputMode="numeric"
-                        />
-                        {cepLoading && <LoaderCircle className="absolute top-1/2 right-4 h-5 w-5 -translate-y-1/2 animate-spin text-lime-400" />}
-                      </div>
-                    </Field>
-                    <div className="grid grid-cols-[1fr_96px] gap-3">
-                      <Field label="Rua / Avenida" error={errors.street}>
-                        <input className={`${inputCls} ${errors.street ? errCls : ""}`} value={form.street} onChange={(e) => set("street", e.target.value)} />
-                      </Field>
-                      <Field label="Número" error={errors.number}>
-                        <input className={`${inputCls} ${errors.number ? errCls : ""}`} value={form.number} onChange={(e) => set("number", e.target.value)} inputMode="numeric" />
-                      </Field>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Bairro" error={errors.neighborhood}>
-                        <input className={`${inputCls} ${errors.neighborhood ? errCls : ""}`} value={form.neighborhood} onChange={(e) => set("neighborhood", e.target.value)} />
-                      </Field>
-                      <div className="grid grid-cols-[1fr_72px] gap-3">
-                        <Field label="Cidade" error={errors.city}>
-                          <input className={`${inputCls} ${errors.city ? errCls : ""}`} value={form.city} onChange={(e) => set("city", e.target.value)} />
-                        </Field>
-                        <Field label="UF">
-                          <input className={`${inputCls} uppercase`} value={form.state} onChange={(e) => set("state", e.target.value.toUpperCase())} maxLength={2} />
-                        </Field>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="mb-1 flex items-center justify-between">
-                        <label className="text-xs font-bold tracking-wide text-zinc-400 uppercase">Raio de atuação</label>
-                        <span className="rounded-full bg-lime-400/12 px-2.5 py-1 text-xs font-extrabold text-lime-300">{form.workRadiusKm} km</span>
-                      </div>
-                      <input type="range" min={2} max={20} step={1} value={form.workRadiusKm} onChange={(e) => set("workRadiusKm", parseInt(e.target.value))} className="rl-range w-full" />
-                    </div>
-                    <Field label="Meta diária de ganhos (R$)">
-                      <input type="number" min={50} step={10} className={inputCls} value={form.dailyGoal} onChange={(e) => set("dailyGoal", parseFloat(e.target.value) || 0)} />
-                    </Field>
-                    <p className="flex items-start gap-1.5 text-[11px] leading-snug text-zinc-500">
-                      <Home className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      Seu endereço de cadastro define sua base no mapa e o canal regional do rádio.
-                    </p>
-                  </>
-                )}
-              </div>
-
-              <ErrorBox msg={serverError} />
-
-              {step < 2 ? (
+                <ErrorBox msg={serverError} />
                 <button
-                  onClick={() => validateStep() && setStep(step + 1)}
-                  className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-lime-400 text-base font-black text-zinc-950 transition active:scale-[0.98]"
-                >
-                  CONTINUAR <ArrowRight className="h-5 w-5" />
-                </button>
-              ) : (
-                <button
-                  onClick={submitRegister}
+                  onClick={submitSimple}
                   disabled={busy}
-                  className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-lime-400 text-base font-black text-zinc-950 shadow-[0_12px_28px_rgba(163,230,53,0.3)] transition active:scale-[0.98] disabled:opacity-60"
+                  className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-lime-400 text-base font-black text-zinc-950 shadow-[0_12px_28px_rgba(163,230,53,0.3)] transition active:scale-[0.98] disabled:opacity-60"
                 >
                   {busy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <BadgeCheck className="h-5 w-5" />}
-                  CRIAR MINHA CONTA E RODAR
+                  CRIAR MINHA CONTA
                 </button>
-              )}
+                <button onClick={() => setView("login")} className="w-full py-1 text-center text-sm font-bold text-lime-300">
+                  Já tenho conta — entrar
+                </button>
+              </div>
             </div>
           )}
         </main>

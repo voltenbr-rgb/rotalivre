@@ -21,7 +21,7 @@ export async function PUT(req: Request) {
     "vehicleModel", "vehiclePlate", "vehicleYear", "vehicleColor",
     "cnhNumber", "cnhCategory", "cnhExpiry",
     "cep", "street", "number", "neighborhood", "city", "state",
-    "workRadiusKm", "dailyGoal",
+    "workRadiusKm", "dailyGoal", "vehicleType",
   ] as const;
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   for (const key of allowed) {

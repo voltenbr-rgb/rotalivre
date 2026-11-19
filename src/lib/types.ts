@@ -29,6 +29,7 @@ export interface Courier {
   baseLng: number;
   rating: number;
   totalDeliveries: number;
+  vehicleType?: VehicleType;
   lastLat?: number | null;
   lastLng?: number | null;
   lastSeenAt?: string | null;
@@ -56,6 +57,35 @@ export interface Order {
   paymentMethod: string;
   status: string;
   createdAt: string;
+  storeId?: number | null;
+  acceptedVehicles?: string;
+  clientPhone?: string;
+  notes?: string;
+}
+
+export type VehicleType = "moto" | "bicicleta" | "scooter" | "carro";
+
+export interface Store {
+  id: number;
+  email: string;
+  name: string;
+  category: string;
+  phone: string;
+  address: string;
+  neighborhood: string;
+  city: string;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface StoreOrder extends Order {
+  courierName: string | null;
+  courierNickname: string | null;
+  courierPhone: string | null;
+  courierVehicle: string | null;
+  acceptedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
 }
 
 export interface DashboardData {

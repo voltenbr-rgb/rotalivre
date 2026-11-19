@@ -74,7 +74,14 @@ async function deliver(subs: SubRow[], msg: PushMessage, respectGap: boolean) {
 }
 
 /** Avisa os entregadores com o sino ligado, online e perto do ponto (raio em km) */
-export async function notifyCouriersNear(lat: number, lng: number, radiusKm: number, msg: PushMessage) {
+export async function notifyCouriersNear(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  msg: PushMessage,
+  opts: { respectGap?: boolean; vehicles?: string } = {},
+) {
+  const vehicles = opts.vehicles && opts.vehicles !== "todos" ? opts.vehicles.split(",") : null;
   const subs = await db.select().from(pushSubscriptions);
   if (!subs.length) return 0;
   const ids = [...new Set(subs.map((s) => s.courierId))];
@@ -83,6 +90,7 @@ export async function notifyCouriersNear(lat: number, lng: number, radiusKm: num
   const nearby = new Set(
     people
       .filter((c) => c.status === "online") // em pausa, offline ou em entrega não recebe
+      .filter((c) => !vehicles || vehicles.includes(c.vehicleType || "moto"))
       .filter((c) => {
         const live = c.lastLat != null && c.lastLng != null && c.lastSeenAt && now - c.lastSeenAt.getTime() < LIVE_MS;
         const pos = live ? { lat: c.lastLat!, lng: c.lastLng! } : { lat: c.baseLat, lng: c.baseLng };
@@ -93,7 +101,7 @@ export async function notifyCouriersNear(lat: number, lng: number, radiusKm: num
   return deliver(
     subs.filter((s) => nearby.has(s.courierId)),
     msg,
-    true,
+    opts.respectGap ?? true,
   );
 }
 

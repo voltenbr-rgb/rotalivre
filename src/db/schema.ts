@@ -46,6 +46,8 @@ export const couriers = sqliteTable("couriers", {
   totalDeliveries: integer("total_deliveries").notNull().default(0),
   // Senha protegida (PBKDF2). Nunca sai do servidor.
   passwordHash: text("password_hash"),
+  // moto | bicicleta | scooter | carro
+  vehicleType: text("vehicle_type").notNull().default("moto"),
   // Última posição real (GPS do celular), atualizada pelo app durante o turno
   lastLat: real("last_lat"),
   lastLng: real("last_lng"),
@@ -83,6 +85,12 @@ export const orders = sqliteTable("orders", {
   // available | accepted | picked_up | delivered | expired | dismissed
   status: text("status").notNull().default("available"),
   courierId: integer("courier_id"),
+  // Pedido lançado por uma loja cadastrada (null = pedido de teste/simulado)
+  storeId: integer("store_id"),
+  // Veículos aceitos: "todos" ou lista separada por vírgula (moto,bicicleta,scooter,carro)
+  acceptedVehicles: text("accepted_vehicles").notNull().default("todos"),
+  clientPhone: text("client_phone").notNull().default(""),
+  notes: text("notes").notNull().default(""),
   createdAt: ts("created_at").notNull().$defaultFn(now),
   acceptedAt: ts("accepted_at"),
   pickedUpAt: ts("picked_up_at"),
@@ -176,4 +184,24 @@ export const messagePhoto = sqliteTable("message_photo", {
   mime: text("mime").notNull(),
   dataB64: text("data_b64").notNull(),
   createdAt: ts("created_at").notNull().$defaultFn(now),
+});
+
+/* ------------------------------------------------------------------ */
+/* Lojas / comércios: conta própria (e-mail + senha), separada dos      */
+/* entregadores. Lançam os pedidos que aparecem no feed da região.     */
+/* ------------------------------------------------------------------ */
+export const stores = sqliteTable("stores", {
+  id: id(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name").notNull().default(""),
+  category: text("category").notNull().default("Restaurante"),
+  phone: text("phone").notNull().default(""),
+  address: text("address").notNull().default(""),
+  neighborhood: text("neighborhood").notNull().default(""),
+  city: text("city").notNull().default(""),
+  lat: real("lat"),
+  lng: real("lng"),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+  updatedAt: ts("updated_at").notNull().$defaultFn(now),
 });

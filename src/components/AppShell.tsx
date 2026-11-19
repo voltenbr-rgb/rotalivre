@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutDashboard, LogOut, Map as MapIcon, Radio, User, Wallet } from "lucide-react";
-import type { Courier, CourierStatus, DashboardData, Order } from "@/lib/types";
+import type { Courier, CourierStatus, DashboardData, Order, Store } from "@/lib/types";
 import { fmtBRL, initialsOf } from "@/lib/format";
-import { apiFetch, clearSession, getToken, setToken } from "@/lib/session";
+import { apiFetch, clearSession, getRole, getToken, setRole, setToken } from "@/lib/session";
 import Header from "./Header";
 import HomeView from "./HomeView";
 import MapView from "./MapView";
@@ -13,12 +13,14 @@ import { useGeolocation } from "@/lib/useGeolocation";
 import RadioView from "./RadioView";
 import ReportsView from "./ReportsView";
 import ProfileView from "./ProfileView";
-import AuthScreen from "./AuthScreen";
+import RoleGate from "./RoleGate";
+import StoreApp from "./StoreApp";
+import AdminPanel from "./AdminPanel";
 import { InstallButton } from "./InstallApp";
 
 type Tab = "inicio" | "mapa" | "radio" | "relatorios" | "perfil";
 type Tone = "ok" | "warn" | "sos";
-type Screen = "checking" | "auth" | "app";
+type Screen = "checking" | "auth" | "app" | "store" | "admin";
 
 const NAV: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "inicio", label: "Início", icon: LayoutDashboard },
@@ -36,6 +38,8 @@ export default function AppShell() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [tab, setTab] = useState<Tab>("inicio");
   const [courier, setCourier] = useState<Courier | null>(null);
+  // Conta de loja (quando o perfil deste aparelho é "lojista")
+  const [store, setStore] = useState<Store | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [toast, setToast] = useState<{ msg: string; tone: Tone; key: number } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +75,23 @@ export default function AppShell() {
       navigator.serviceWorker.register("/sw.js").catch(() => null);
     }
     (async () => {
-      if (getToken()) {
+      const role = getRole();
+      if (getToken() && role === "store") {
+        const res = await apiFetch("/api/store/me").catch(() => null);
+        if (res?.ok) {
+          setStore((await res.json()).store);
+          setScreen("store");
+          return;
+        }
+        clearSession();
+      } else if (getToken() && role === "admin") {
+        const res = await apiFetch("/api/admin/overview").catch(() => null);
+        if (res?.ok) {
+          setScreen("admin");
+          return;
+        }
+        clearSession();
+      } else if (getToken()) {
         const c = await loadCourier().catch(() => undefined);
         if (c) {
           await loadDashboard();
@@ -93,6 +113,7 @@ export default function AppShell() {
 
   const handleAuthenticated = async (c: Courier, token: string) => {
     setToken(token);
+    setRole("courier");
     setCourier(c);
     setTab("inicio");
     setScreen("app");
@@ -100,6 +121,32 @@ export default function AppShell() {
     await loadDashboard();
     notify(`Bem-vindo(a), ${c.nickname || c.name.split(" ")[0]}! Você já está online na praça.`);
   };
+
+  const handleStoreAuthenticated = (st: Store, token: string) => {
+    setToken(token);
+    setRole("store");
+    setStore(st);
+    setScreen("store");
+  };
+
+  const handleAdminAuthenticated = (token: string) => {
+    setToken(token);
+    setRole("admin");
+    setScreen("admin");
+  };
+
+  /** Sai da conta de loja ou do painel master */
+  const handleOtherLogout = useCallback(() => {
+    const url = getRole() === "store" ? "/api/store/auth" : "/api/admin/login";
+    apiFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "logout" }),
+    }).catch(() => null);
+    setTimeout(clearSession, 300);
+    setStore(null);
+    setScreen("auth");
+  }, []);
 
   const handleLogout = () => {
     // Invalida a chave no servidor (este aparelho sai da conta)
@@ -167,8 +214,42 @@ export default function AppShell() {
     );
   }
 
+  const toastView = toast && (
+    <div
+      key={toast.key}
+      className="pointer-events-none fixed inset-x-0 z-[80] flex justify-center px-4"
+      style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}
+    >
+      <div
+        className={`toast-in w-full max-w-[440px] rounded-2xl border px-4 py-3 text-center text-sm font-bold shadow-2xl backdrop-blur-md ${
+          toast.tone === "warn" ? "border-amber-400/40 bg-[#1d1608]/92 text-amber-100" : "border-lime-400/30 bg-[#0e1407]/92 text-lime-100"
+        }`}
+      >
+        {toast.msg}
+      </div>
+    </div>
+  );
+
+  if (screen === "store" && store) {
+    return (
+      <>
+        <StoreApp store={store} onStoreChange={setStore} onLogout={handleOtherLogout} notify={notify} />
+        {toastView}
+      </>
+    );
+  }
+
+  if (screen === "admin") {
+    return <AdminPanel onLogout={handleOtherLogout} />;
+  }
+
   if (screen === "auth" || !courier) {
-    return <AuthScreen onAuthenticated={handleAuthenticated} />;
+    return (
+      <>
+        <RoleGate onCourier={handleAuthenticated} onStore={handleStoreAuthenticated} onAdmin={handleAdminAuthenticated} />
+        {toastView}
+      </>
+    );
   }
 
   return (

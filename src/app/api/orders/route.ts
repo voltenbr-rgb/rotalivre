@@ -38,9 +38,15 @@ export async function GET(req: Request) {
   const updates: Promise<unknown>[] = [];
   const fresh: typeof available = [];
 
+  // Veículo do entregador precisa estar entre os aceitos pela loja
+  const myVehicle = me.vehicleType || "moto";
+  const vehicleOk = (o: (typeof available)[number]) =>
+    !o.acceptedVehicles || o.acceptedVehicles === "todos" || o.acceptedVehicles.split(",").includes(myVehicle);
+
   for (const o of available) {
     const ageMin = (now - o.createdAt.getTime()) / 60000;
-    if (ageMin > 30) {
+    // Pedido de teste expira em 30 min; pedido de loja real, em 3 h
+    if (ageMin > (o.storeId ? 180 : 30)) {
       updates.push(db.update(orders).set({ status: "expired" }).where(eq(orders.id, o.id)));
       continue;
     }
@@ -48,7 +54,7 @@ export async function GET(req: Request) {
   }
 
   // Feed por região: mostra só o que está perto do entregador
-  const nearby = fresh.filter(near);
+  const nearby = fresh.filter((o) => near(o) && vehicleOk(o));
   fresh.length = 0;
   fresh.push(...nearby);
 
@@ -79,6 +85,8 @@ export async function GET(req: Request) {
     );
   }
 
+  // Pedidos de lojas reais primeiro
+  fresh.sort((a, b) => Number(!!b.storeId) - Number(!!a.storeId));
   const result = fresh.slice(0, 12).map((o) => ({
     ...o,
     ratePerKm: Math.round((o.valueNet / o.distanceKm) * 100) / 100,

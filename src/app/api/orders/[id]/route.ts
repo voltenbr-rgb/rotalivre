@@ -28,11 +28,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (active.length > 0) {
       return NextResponse.json({ error: "Você já tem uma entrega em andamento" }, { status: 409 });
     }
+    // Só aceita se ainda estiver disponível (evita dois entregadores no mesmo pedido)
     const [updated] = await db
       .update(orders)
       .set({ status: "accepted", courierId: main.id, acceptedAt: new Date() })
-      .where(eq(orders.id, orderId))
+      .where(and(eq(orders.id, orderId), eq(orders.status, "available")))
       .returning();
+    if (!updated) {
+      return NextResponse.json({ error: "Pedido já foi aceito por outro entregador" }, { status: 409 });
+    }
     await db.update(couriers).set({ status: "em_entrega" }).where(eq(couriers.id, main.id));
     return NextResponse.json({ order: serialize(updated) });
   }

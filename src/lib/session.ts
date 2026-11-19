@@ -21,10 +21,30 @@ export function setToken(token: string) {
   } catch { /* armazenamento indisponível */ }
 }
 
+export type Role = "courier" | "store" | "admin";
+const ROLE_KEY = "rl_role";
+
+/** Perfil da sessão neste aparelho: entregador, loja ou painel master */
+export function getRole(): Role {
+  try {
+    const r = localStorage.getItem(ROLE_KEY);
+    return r === "store" || r === "admin" ? r : "courier";
+  } catch {
+    return "courier";
+  }
+}
+
+export function setRole(role: Role) {
+  try {
+    localStorage.setItem(ROLE_KEY, role);
+  } catch { /* ignore */ }
+}
+
 export function clearSession() {
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(LEGACY_KEY);
+    localStorage.removeItem(ROLE_KEY);
   } catch { /* ignore */ }
 }
 

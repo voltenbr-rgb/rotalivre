@@ -36,7 +36,14 @@ export default function OrderCard({ order, onAccept, onDismiss, disabled }: Prop
           <Store className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-bold text-white">{order.establishment}</p>
+          <p className="flex items-center gap-1.5 truncate text-[15px] font-bold text-white">
+            {order.establishment}
+            {order.storeId ? (
+              <span className="shrink-0 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-black tracking-wide text-amber-300 uppercase">
+                Loja
+              </span>
+            ) : null}
+          </p>
           <p className="flex items-center gap-1 truncate text-xs text-zinc-400">
             <User className="h-3 w-3" /> Cliente: {order.clientName}
           </p>
@@ -94,6 +101,9 @@ export default function OrderCard({ order, onAccept, onDismiss, disabled }: Prop
         <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-zinc-500" /> ~{order.etaMinutes} min</span>
         <span className="flex items-center gap-1.5"><Package className="h-3.5 w-3.5 text-zinc-500" /> {order.itemsCount} {order.itemsCount > 1 ? "itens" : "item"}</span>
         <span className="flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5 text-zinc-500" /> {order.paymentMethod}</span>
+        {order.notes ? (
+          <span className="basis-full rounded-xl bg-amber-400/8 px-2.5 py-1.5 text-[12px] text-amber-100/90">📝 {order.notes}</span>
+        ) : null}
       </div>
 
       {/* Ações — toque grande, pensado para luva */}

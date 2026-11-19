@@ -50,14 +50,15 @@ export async function POST(req: Request) {
   }
 
   if (action === "register") {
+    // Cadastro simples (fase de testes): e-mail, senha e veículo. O resto se completa no Perfil.
     const email = String(body.email ?? "").trim().toLowerCase();
-    const name = String(body.name ?? "").trim();
-    const plate = String(body.vehiclePlate ?? "").trim().toUpperCase().replace("-", "");
-    if (name.length < 3) return NextResponse.json({ error: "Informe seu nome completo" }, { status: 400 });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "E-mail inválido" }, { status: 400 });
     }
-    if (!(/^[A-Z]{3}\d{4}$/.test(plate) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(plate))) {
+    const name = String(body.name ?? "").trim() || email.split("@")[0];
+    const vehicleType = ["moto", "bicicleta", "scooter", "carro"].includes(body.vehicleType) ? body.vehicleType : "moto";
+    const plate = String(body.vehiclePlate ?? "").trim().toUpperCase().replace("-", "");
+    if (plate && !(/^[A-Z]{3}\d{4}$/.test(plate) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(plate))) {
       return NextResponse.json({ error: "Placa inválida (use AAA0000 ou AAA0A00)" }, { status: 400 });
     }
     const password = String(body.password ?? "");
@@ -77,6 +78,7 @@ export async function POST(req: Request) {
         isMain: false,
         name,
         nickname: String(body.nickname ?? "").trim() || name.split(" ")[0],
+        vehicleType,
         email,
         phone: String(body.phone ?? ""),
         cpf: String(body.cpf ?? ""),

@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { ensureSeeded } from "@/lib/seed";
-import { generateOrder } from "@/lib/domain";
+import { ensureSeeded, getSessionCourier } from "@/lib/seed";
+import { generateOrder, haversineKm } from "@/lib/domain";
+
+/** Raio do feed: só aparecem coletas até esta distância do entregador */
+const FEED_RADIUS_KM = 25;
+const LIVE_MS = 3 * 60 * 1000;
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +16,16 @@ export const dynamic = "force-dynamic";
  * - valores dos pedidos oscilam levemente a cada leitura (demanda dinâmica transparente)
  * - pedidos parados há +30min expiram; novos pedidos entram na praça
  */
-export async function GET() {
+export async function GET(req: Request) {
   await ensureSeeded();
   const now = Date.now();
+  const me = await getSessionCourier(req);
+  const live =
+    me.lastLat != null && me.lastLng != null && me.lastSeenAt && now - me.lastSeenAt.getTime() < LIVE_MS;
+  // Centro do feed: GPS real (se recente) ou a base cadastrada
+  const center = live ? { lat: me.lastLat!, lng: me.lastLng! } : { lat: me.baseLat, lng: me.baseLng };
+  const near = (o: { pickupLat: number; pickupLng: number }) =>
+    haversineKm(center.lat, center.lng, o.pickupLat, o.pickupLng) <= FEED_RADIUS_KM;
   const available = await db
     .select()
     .from(orders)
@@ -43,13 +54,18 @@ export async function GET() {
     fresh.push(o);
   }
 
+  // Feed por região: mostra só o que está perto do entregador
+  const nearby = fresh.filter(near);
+  fresh.length = 0;
+  fresh.push(...nearby);
+
   // Novos pedidos chegando na praça — a praça nunca fica vazia
   while (fresh.length < 6) {
-    const [created] = await db.insert(orders).values(generateOrder()).returning();
+    const [created] = await db.insert(orders).values(generateOrder(center)).returning();
     fresh.unshift(created);
   }
   if (fresh.length < 9 && Math.random() < 0.5) {
-    const [created] = await db.insert(orders).values(generateOrder()).returning();
+    const [created] = await db.insert(orders).values(generateOrder(center)).returning();
     fresh.unshift(created);
   }
   await Promise.all(updates);

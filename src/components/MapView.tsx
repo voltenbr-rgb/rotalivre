@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import {
-  CloudRainWind, ExternalLink, Flag, LocateFixed, MapPin, Navigation,
+  CloudRainWind, ExternalLink, Flag, LocateFixed, LocateOff, MapPin, Navigation,
   Search, ShieldExclamationPoint, Siren, Store, TriangleExclamationPoint, Users, X,
 } from "lucide-react";
 import type { Map as LeafletMap, Marker, LayerGroup } from "leaflet";
@@ -15,12 +15,15 @@ import {
   searchCities, type BrazilCity,
 } from "@/lib/brazil";
 import PttButton from "./PttButton";
+import { useWakeLock, type useGeolocation } from "@/lib/useGeolocation";
 
 interface Props {
   courier: Courier;
   activeOrder: Order | null;
   notify: (msg: string, tone?: "ok" | "warn" | "sos") => void;
   onOrderAction: (order: Order, action: "pickup" | "deliver") => Promise<void>;
+  /** GPS compartilhado pelo AppShell (fica ligado em todas as abas) */
+  gps: ReturnType<typeof useGeolocation>;
 }
 
 type ViewMode = "rota" | "brasil";
@@ -65,7 +68,7 @@ async function fetchStreetRoute(a: LatLng, b: LatLng): Promise<RouteInfo | null>
   }
 }
 
-export default function MapView({ courier, activeOrder, notify, onOrderAction }: Props) {
+export default function MapView({ courier, activeOrder, notify, onOrderAction, gps }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const courierMarkerRef = useRef<Marker | null>(null);
@@ -92,6 +95,15 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
   const [pickupRoute, setPickupRoute] = useState<RouteInfo | null>(null);
   const [hintDismissed, setHintDismissed] = useState(false);
   const statesLayerStore = useRef<LayerGroup | null>(null);
+  const accuracyCircleRef = useRef<import("leaflet").Circle | null>(null);
+  const followRef = useRef(true);
+  const [following, setFollowing] = useState(true);
+  const [confirmArmed, setConfirmArmed] = useState(false);
+
+  /* ---------- GPS real do celular ---------- */
+  const gpsActive = gps.status === "active";
+  // Tela sempre acesa durante uma entrega com GPS ligado
+  useWakeLock(gpsActive && !!activeOrder);
 
   /* ---------- init do mapa ---------- */
   useEffect(() => {
@@ -131,6 +143,12 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
         fillOpacity: 0.05,
         dashArray: "6 8",
       }).addTo(areaGroupRef.current);
+
+      // Arrastar o mapa desliga o "seguir minha posição"
+      map.on("dragstart", () => {
+        followRef.current = false;
+        setFollowing(false);
+      });
 
       mapRef.current = map;
       setMapReady(true);
@@ -172,7 +190,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
         iconAnchor: [15, 15],
       });
       L.marker([p.lat, p.lng], { icon }).addTo(group)
-        .bindTooltip(`${p.nickname} • ${p.distanceKm.toFixed(1)} km`, { direction: "top", offset: [0, -14], className: "rl-tip" });
+        .bindTooltip(`${p.nickname} • ${p.distanceKm.toFixed(1)} km${p.live ? " • GPS ao vivo" : ""}`, { direction: "top", offset: [0, -14], className: "rl-tip" });
     }
   }, [partners, radarOn, mapReady, viewMode]);
 
@@ -243,7 +261,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, activeOrder?.id, activeOrder?.status]);
+  }, [mapReady, activeOrder?.id, activeOrder?.status, gpsActive]);
 
   /* ---------- modo Brasil todo: capitais, cidades e estados ---------- */
   useEffect(() => {
@@ -380,8 +398,45 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
     cityMarkerRef.current = null;
   };
 
-  /* ---------- movimento simulado do entregador ---------- */
+  /* ---------- posição real (GPS) ---------- */
+  const firstFixRef = useRef(true);
   useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    const f = gps.fix;
+    if (!mapReady || !L || !map || !f) return;
+    const next = { lat: f.lat, lng: f.lng };
+    posRef.current = next;
+    courierMarkerRef.current?.setLatLng([next.lat, next.lng]);
+    setPos(next);
+
+    // Círculo de precisão do GPS
+    if (!accuracyCircleRef.current) {
+      accuracyCircleRef.current = L.circle([next.lat, next.lng], {
+        radius: f.accuracy,
+        color: "#38bdf8",
+        weight: 1,
+        opacity: 0.5,
+        fillColor: "#38bdf8",
+        fillOpacity: 0.08,
+        interactive: false,
+      }).addTo(map);
+    } else {
+      accuracyCircleRef.current.setLatLng([next.lat, next.lng]).setRadius(f.accuracy);
+    }
+
+    if (firstFixRef.current) {
+      firstFixRef.current = false;
+      if (!activeOrder && viewModeRef.current === "rota") map.flyTo([next.lat, next.lng], 15, { duration: 0.8 });
+    } else if (followRef.current && viewModeRef.current === "rota") {
+      map.panTo([next.lat, next.lng], { animate: true, duration: 0.6 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gps.fix, mapReady]);
+
+  /* ---------- movimento simulado (somente sem GPS: modo demonstração) ---------- */
+  useEffect(() => {
+    if (gpsActive) return;
     const t = setInterval(() => {
       const cur = posRef.current;
       let target = { lat: courier.baseLat, lng: courier.baseLng };
@@ -410,7 +465,12 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
       setPos(next);
     }, 2000);
     return () => clearInterval(t);
-  }, [activeOrder, courier.baseLat, courier.baseLng]);
+  }, [activeOrder, courier.baseLat, courier.baseLng, gpsActive]);
+
+  /* ---------- confirmação: zera o "confirmar mesmo assim" ao trocar de etapa ---------- */
+  useEffect(() => {
+    setConfirmArmed(false);
+  }, [activeOrder?.id, activeOrder?.status]);
 
   const nextTarget = activeOrder
     ? activeOrder.status === "accepted"
@@ -420,6 +480,10 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
   const distToTarget = nextTarget ? hav(pos.lat, pos.lng, nextTarget.lat, nextTarget.lng) : 0;
   const navKm = activeOrder?.status === "accepted" && pickupRoute ? pickupRoute.km : deliveryRoute && activeOrder?.status === "picked_up" ? deliveryRoute.km : distToTarget * 1.32;
   const navMin = activeOrder?.status === "accepted" && pickupRoute ? pickupRoute.min : deliveryRoute && activeOrder?.status === "picked_up" ? deliveryRoute.min : Math.max(1, Math.round(distToTarget * 2.6));
+  // Distância real até o ponto da etapa atual (para liberar a confirmação)
+  const GEOFENCE_KM = 0.25;
+  const farFromTarget = gpsActive && !!nextTarget && distToTarget > GEOFENCE_KM;
+  const distLabel = distToTarget < 1 ? `${Math.round(distToTarget * 1000)} m` : fmtKm(Math.round(distToTarget * 10) / 10);
   const navGoogle = nextTarget ? `https://www.google.com/maps/dir/?api=1&destination=${nextTarget.lat},${nextTarget.lng}` : "#";
   const navWaze = nextTarget ? `https://waze.com/ul?ll=${nextTarget.lat},${nextTarget.lng}&navigate=yes` : "#";
 
@@ -465,6 +529,9 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
   };
 
   const recenter = () => {
+    followRef.current = true;
+    setFollowing(true);
+    if (!gpsActive && gps.status !== "requesting") gps.start();
     if (viewMode === "brasil") setViewMode("rota");
     mapRef.current?.flyTo([posRef.current.lat, posRef.current.lng], 14, { duration: 0.8 });
   };
@@ -492,7 +559,10 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
           ) : (
             <>
               <p className="flex items-center gap-1.5 text-[13px] font-bold text-white">
-                <Navigation className="h-4 w-4 text-lime-400" /> Você está em {courier.neighborhood}, {courier.city}/{courier.state}
+                <Navigation className="h-4 w-4 text-lime-400" />{" "}
+                {gpsActive && gps.fix
+                  ? `GPS ativo • precisão de ±${Math.round(gps.fix.accuracy)} m`
+                  : `Você está em ${courier.neighborhood}, ${courier.city}/${courier.state}`}
               </p>
               <p className="mt-0.5 text-[11px] font-semibold text-zinc-400">
                 Raio de atuação de {courier.workRadiusKm} km • {partners.filter((p) => p.status !== "pausa").length} parceiros por perto
@@ -575,12 +645,39 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
         </button>
         <button
           onClick={recenter}
-          className="flex items-center justify-center rounded-xl border border-white/10 bg-[#0b0e13]/85 p-2.5 text-zinc-200 shadow-xl backdrop-blur-md"
-          aria-label="Centralizar em mim"
+          className={`flex items-center justify-center rounded-xl border p-2.5 shadow-xl backdrop-blur-md ${
+            gpsActive && following ? "border-sky-400/50 bg-sky-400/20 text-sky-200" : "border-white/10 bg-[#0b0e13]/85 text-zinc-200"
+          }`}
+          aria-label="Centralizar e seguir minha posição"
         >
-          <LocateFixed className="h-5 w-5" />
+          {gpsActive ? <LocateFixed className="h-5 w-5" /> : <LocateOff className="h-5 w-5" />}
         </button>
       </div>
+
+      {/* Aviso de GPS desligado (o app segue em modo simulado) */}
+      {!gpsActive && viewMode === "rota" && (
+        <div className="absolute top-[138px] left-3 z-[500] max-w-[62%] rounded-xl border border-amber-400/40 bg-[#0b0e13]/92 px-3 py-2 shadow-xl backdrop-blur-md">
+          <p className="text-[11px] leading-snug font-bold text-amber-200">
+            {gps.status === "requesting"
+              ? "Procurando sinal de GPS…"
+              : gps.status === "denied"
+                ? "Localização bloqueada. Libere nas configurações do navegador."
+                : gps.status === "unsupported"
+                  ? "Este aparelho não tem GPS disponível."
+                  : gps.status === "unavailable"
+                    ? "Sem sinal de GPS. Posição simulada."
+                    : "GPS desligado. Posição simulada."}
+          </p>
+          {gps.status !== "requesting" && gps.status !== "unsupported" && (
+            <button
+              onClick={() => gps.start()}
+              className="mt-1.5 rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-black text-zinc-950 active:scale-95"
+            >
+              Ativar GPS
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Legenda das regiões do Brasil */}
       {viewMode === "brasil" && !selectedCity && !hintDismissed && (
@@ -706,15 +803,27 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction }:
           <button
             disabled={busy}
             onClick={async () => {
+              // Longe do ponto: pede um segundo toque para confirmar
+              if (farFromTarget && !confirmArmed) {
+                setConfirmArmed(true);
+                notify(`Você está a ${distLabel} do ${activeOrder.status === "accepted" ? "ponto de coleta" : "destino"}. Toque de novo para confirmar mesmo assim.`, "warn");
+                if (navigator.vibrate) navigator.vibrate(80);
+                return;
+              }
               setBusy(true);
               await onOrderAction(activeOrder, activeOrder.status === "accepted" ? "pickup" : "deliver");
               setBusy(false);
+              setConfirmArmed(false);
             }}
             className={`mt-2.5 h-13 w-full rounded-2xl py-3.5 text-sm font-black tracking-wide text-zinc-950 transition active:scale-[0.98] disabled:opacity-50 ${
               activeOrder.status === "accepted" ? "bg-amber-400" : "bg-emerald-400"
             }`}
           >
-            {activeOrder.status === "accepted" ? "CONFIRMAR COLETA NA PARTIDA" : "CONFIRMAR ENTREGA NO DESTINO"}
+            {farFromTarget && confirmArmed
+              ? `CONFIRMAR MESMO ASSIM (${distLabel})`
+              : activeOrder.status === "accepted"
+                ? "CONFIRMAR COLETA NA PARTIDA"
+                : "CONFIRMAR ENTREGA NO DESTINO"}
           </button>
         </div>
       )}

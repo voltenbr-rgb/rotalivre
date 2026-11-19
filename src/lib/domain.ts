@@ -114,15 +114,36 @@ export type GeneratedOrder = {
   paymentMethod: string;
 };
 
-export function generateOrder(): GeneratedOrder {
+/** Nomes de bairro comuns em quase toda cidade brasileira (demo fora de SP) */
+const GENERIC_NEIGHBORHOODS = [
+  "Centro", "Vila Nova", "Jardim América", "Santa Fé", "Jardim Paulista", "Vila Jardim",
+  "São Francisco", "Jardim dos Estados", "Vila Planalto", "Jardim Bela Vista",
+];
+
+/** Centro "longe de SP" = mais de 60 km da base de demonstração */
+export function isFarFromDemoBase(center: { lat: number; lng: number }) {
+  return haversineKm(center.lat, center.lng, MAIN_BASE.lat, MAIN_BASE.lng) > 60;
+}
+
+/**
+ * Gera um pedido de demonstração. Com `center` (posição real do GPS),
+ * o mapa de bairros de SP é transladado para perto do entregador.
+ */
+export function generateOrder(center?: { lat: number; lng: number }): GeneratedOrder {
   const pickupN = pick(NEIGHBORHOODS.slice(0, 8));
   let deliveryN = pick(NEIGHBORHOODS);
   if (deliveryN.name === pickupN.name) deliveryN = pick(NEIGHBORHOODS);
 
-  const pickupLat = jitter(pickupN.lat, 0.012);
-  const pickupLng = jitter(pickupN.lng, 0.012);
-  const deliveryLat = jitter(deliveryN.lat, 0.014);
-  const deliveryLng = jitter(deliveryN.lng, 0.014);
+  const dLat = center ? center.lat - MAIN_BASE.lat : 0;
+  const dLng = center ? center.lng - MAIN_BASE.lng : 0;
+  const generic = !!center && isFarFromDemoBase(center);
+  const nameOf = (n: (typeof NEIGHBORHOODS)[number]) =>
+    generic ? GENERIC_NEIGHBORHOODS[NEIGHBORHOODS.indexOf(n) % GENERIC_NEIGHBORHOODS.length] : n.name;
+
+  const pickupLat = jitter(pickupN.lat + dLat, 0.012);
+  const pickupLng = jitter(pickupN.lng + dLng, 0.012);
+  const deliveryLat = jitter(deliveryN.lat + dLat, 0.014);
+  const deliveryLng = jitter(deliveryN.lng + dLng, 0.014);
 
   const straight = haversineKm(pickupLat, pickupLng, deliveryLat, deliveryLng);
   const distanceKm = Math.max(1.2, Math.round(straight * 1.32 * 10) / 10);
@@ -137,11 +158,11 @@ export function generateOrder(): GeneratedOrder {
     establishment: est.name,
     establishmentType: est.type,
     pickupAddress: `${pick(STREETS)}, ${Math.floor(rnd(40, 1800))}`,
-    pickupNeighborhood: pickupN.name,
+    pickupNeighborhood: nameOf(pickupN),
     pickupLat,
     pickupLng,
     deliveryAddress: `${pick(STREETS)}, ${Math.floor(rnd(40, 1800))}`,
-    deliveryNeighborhood: deliveryN.name,
+    deliveryNeighborhood: nameOf(deliveryN),
     deliveryLat,
     deliveryLng,
     distanceKm,

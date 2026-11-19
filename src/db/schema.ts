@@ -44,6 +44,13 @@ export const couriers = sqliteTable("couriers", {
   baseLng: real("base_lng").notNull().default(-46.7678),
   rating: real("rating").notNull().default(4.9),
   totalDeliveries: integer("total_deliveries").notNull().default(0),
+  // Última posição real (GPS do celular), atualizada pelo app durante o turno
+  lastLat: real("last_lat"),
+  lastLng: real("last_lng"),
+  lastAccuracyM: real("last_accuracy_m"),
+  lastHeading: real("last_heading"),
+  lastSpeedKmh: real("last_speed_kmh"),
+  lastSeenAt: ts("last_seen_at"),
   createdAt: ts("created_at").notNull().$defaultFn(now),
   updatedAt: ts("updated_at").notNull().$defaultFn(now),
 });

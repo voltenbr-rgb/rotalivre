@@ -29,6 +29,9 @@ export interface Courier {
   baseLng: number;
   rating: number;
   totalDeliveries: number;
+  lastLat?: number | null;
+  lastLng?: number | null;
+  lastSeenAt?: string | null;
 }
 
 export interface Order {
@@ -77,6 +80,8 @@ export interface Partner {
   lng: number;
   distanceKm: number;
   rating: number;
+  /** true = posição vinda do GPS real nos últimos minutos */
+  live?: boolean;
 }
 
 export type AlertType = "blitz" | "alagamento" | "risco" | "restaurante" | "sos";

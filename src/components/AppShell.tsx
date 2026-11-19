@@ -8,6 +8,7 @@ import { apiFetch, clearSession, getSessionId, setSessionId } from "@/lib/sessio
 import Header from "./Header";
 import HomeView from "./HomeView";
 import MapView from "./MapView";
+import { useGeolocation } from "@/lib/useGeolocation";
 import RadioView from "./RadioView";
 import ReportsView from "./ReportsView";
 import ProfileView from "./ProfileView";
@@ -28,6 +29,8 @@ const NAV: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
 
 export default function AppShell() {
   const [screen, setScreen] = useState<Screen>("checking");
+  // GPS real ligado no app inteiro: o feed e o radar usam a posição atual
+  const gps = useGeolocation();
   const [tab, setTab] = useState<Tab>("inicio");
   const [courier, setCourier] = useState<Courier | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -221,7 +224,9 @@ export default function AppShell() {
       </aside>
 
       {/* ---------- Coluna principal ---------- */}
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-[#05070a] shadow-[0_0_80px_rgba(0,0,0,0.9)] md:border-x md:border-white/6 lg:mx-0 lg:ml-64 lg:max-w-none lg:border-none lg:shadow-none">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-[#05070a] shadow-[0_0_80px_rgba(0,0,0,0.9)] md:border-x md:border-white/6 lg:mx-0 lg:ml-64 lg:max-w-none lg:border-none lg:shadow-none"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <Header
           courier={courier}
           todayNet={dashboard?.todayNet ?? 0}
@@ -237,7 +242,7 @@ export default function AppShell() {
           )}
           {tab === "mapa" && (
             <div className="h-full pb-[68px] lg:pb-0">
-              <MapView courier={courier} activeOrder={dashboard?.activeOrder ?? null} notify={notify} onOrderAction={handleOrderAction} />
+              <MapView courier={courier} activeOrder={dashboard?.activeOrder ?? null} notify={notify} onOrderAction={handleOrderAction} gps={gps} />
             </div>
           )}
           {tab === "radio" && (

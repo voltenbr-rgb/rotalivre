@@ -24,6 +24,14 @@ O banco D1 já está ligado pelo `wrangler.jsonc` (binding `DB`).
 
 > Observação: Next.js com rotas de API não roda no Cloudflare *Pages* clássico; a Cloudflare recomenda Workers + OpenNext, que tem a mesma integração com o GitHub.
 
+## Mapa e GPS
+
+- O GPS real do celular liga sozinho depois da primeira permissão (`src/lib/useGeolocation.ts`).
+- A posição vai para `POST /api/courier/location` a cada ~15 s ou ~30 m.
+- Sem GPS, o mapa entra em **modo simulado** (demonstração).
+- Durante uma entrega a tela fica acesa (Wake Lock). Confirmar a coleta ou a entrega a mais de 250 m do ponto pede um segundo toque.
+- Limitação de PWA: com a tela apagada ou o app em segundo plano o navegador **não envia** a posição.
+
 ## Banco de dados
 
 - Schema: `src/db/schema.ts` (Drizzle, SQLite/D1)

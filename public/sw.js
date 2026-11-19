@@ -1,5 +1,5 @@
 /* RotaLivre — Service Worker (cache apenas de ativos estáticos; API sempre online) */
-const CACHE = "rotalivre-static-v1";
+const CACHE = "rotalivre-static-v2";
 const STATIC_DESTINATIONS = ["style", "script", "font", "image"];
 
 self.addEventListener("install", (event) => {

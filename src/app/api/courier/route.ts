@@ -2,18 +2,20 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { couriers } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getSessionCourier } from "@/lib/seed";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const c = await getSessionCourier(req);
+  if (!c) return unauthorized();
   return NextResponse.json({ courier: c });
 }
 
 export async function PUT(req: Request) {
   const body = await req.json();
   const session = await getSessionCourier(req);
+  if (!session) return unauthorized();
   const allowed = [
     "name", "nickname", "email", "phone", "cpf", "birthDate", "photoUrl", "status",
     "vehicleModel", "vehiclePlate", "vehicleYear", "vehicleColor",

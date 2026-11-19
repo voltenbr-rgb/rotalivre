@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { ensureSeeded, getSessionCourier } from "@/lib/seed";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { generateOrder, haversineKm } from "@/lib/domain";
 
 /** Raio do feed: só aparecem coletas até esta distância do entregador */
@@ -13,13 +13,14 @@ export const dynamic = "force-dynamic";
 
 /**
  * Feed aberto em tempo real:
- * - valores dos pedidos oscilam levemente a cada leitura (demanda dinâmica transparente)
- * - pedidos parados há +30min expiram; novos pedidos entram na praça
+ * - pedidos parados há +30min expiram
+ * - PROVISÓRIO: enquanto não há lançamento de pedidos, pedidos de teste são
+ *   gerados ao redor do entregador para testar o feed e o mapa
  */
 export async function GET(req: Request) {
-  await ensureSeeded();
   const now = Date.now();
   const me = await getSessionCourier(req);
+  if (!me) return unauthorized();
   const live =
     me.lastLat != null && me.lastLng != null && me.lastSeenAt && now - me.lastSeenAt.getTime() < LIVE_MS;
   // Centro do feed: GPS real (se recente) ou a base cadastrada
@@ -40,16 +41,6 @@ export async function GET(req: Request) {
     if (ageMin > 30) {
       updates.push(db.update(orders).set({ status: "expired" }).where(eq(orders.id, o.id)));
       continue;
-    }
-    // Oscilação de demanda em tempo real (mostrada ao entregador, sem caixa-preta)
-    if (Math.random() < 0.45) {
-      const delta = Math.round((Math.random() * 2.6 - 1.1) * 2) / 2;
-      const next = Math.max(7, Math.round((o.valueNet + delta) * 2) / 2);
-      if (next !== o.valueNet) {
-        updates.push(db.update(orders).set({ valueNet: next }).where(eq(orders.id, o.id)));
-        fresh.push({ ...o, valueNet: next });
-        continue;
-      }
     }
     fresh.push(o);
   }

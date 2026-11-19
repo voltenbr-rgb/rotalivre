@@ -2,56 +2,14 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { messages, couriers } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { ensureSeeded, getSessionCourier } from "@/lib/seed";
-import { AMBIENT_TEXTS } from "@/lib/domain";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const AMBIENT_ALERTS = [
-  { alertType: "alagamento", content: "Rua alagada perto da estação, água na canela. Evitem a parte baixa!", neighborhood: "Socorro" },
-  { alertType: "risco", content: "Movimentação estranha na viela atrás do mercado, passem pela avenida principal", neighborhood: "Jardim Ângela" },
-  { alertType: "blitz", content: "Comando de trânsito na entrada do Morumbi, cavaletes na pista", neighborhood: "Morumbi" },
-  { alertType: "restaurante", content: "Sushi Yama tá com fila de motoboy, 20 min de espera fácil", neighborhood: "Santo Amaro" },
-];
-
-/** Movimento orgânico da comunidade: parceiros publicam no canal de tempos em tempos */
-async function ambientActivity(channel: string) {
-  if (Math.random() > 0.22) return;
-  const partners = await db
-    .select()
-    .from(couriers)
-    .where(eq(couriers.isMain, false));
-  const online = partners.filter((p) => p.status !== "pausa");
-  if (!online.length) return;
-  const sender = online[Math.floor(Math.random() * online.length)];
-  if (Math.random() < 0.3) {
-    const a = AMBIENT_ALERTS[Math.floor(Math.random() * AMBIENT_ALERTS.length)];
-    await db.insert(messages).values({
-      courierId: sender.id,
-      channel,
-      kind: "alerta",
-      alertType: a.alertType,
-      content: a.content,
-      neighborhood: a.neighborhood,
-      lat: sender.baseLat,
-      lng: sender.baseLng,
-    });
-  } else {
-    await db.insert(messages).values({
-      courierId: sender.id,
-      channel,
-      kind: "texto",
-      content: AMBIENT_TEXTS[Math.floor(Math.random() * AMBIENT_TEXTS.length)],
-      neighborhood: sender.neighborhood || "Campo Limpo",
-    });
-  }
-}
-
 export async function GET(req: Request) {
-  await ensureSeeded();
   const main = await getSessionCourier(req);
+  if (!main) return unauthorized();
   const channel = new URL(req.url).searchParams.get("channel") ?? "Zona Sul";
-  await ambientActivity(channel);
 
   const rows = await db
     .select({
@@ -84,6 +42,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const main = await getSessionCourier(req);
+  if (!main) return unauthorized();
   const body = await req.json();
   const [created] = await db
     .insert(messages)

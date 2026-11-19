@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { transactions, orders, couriers } from "@/db/schema";
 import { and, eq, gte, inArray, desc, ne } from "drizzle-orm";
-import { getSessionCourier } from "@/lib/seed";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const main = await getSessionCourier(req);
+  if (!main) return unauthorized();
   const start = new Date();
   start.setHours(0, 0, 0, 0);
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders, transactions, couriers } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
-import { getSessionCourier } from "@/lib/seed";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { grossFromNet } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const orderId = parseInt(id);
   const { action } = await req.json();
   const main = await getSessionCourier(req);
+  if (!main) return unauthorized();
 
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
@@ -66,20 +67,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       })
       .returning();
 
-    let tip: number | null = null;
-    if (Math.random() < 0.35) {
-      tip = Math.round((2 + Math.random() * 7) * 2) / 2;
-      await db.insert(transactions).values({
-        courierId: main.id,
-        orderId: order.id,
-        type: "gorjeta",
-        description: `Gorjeta • ${order.clientName}`,
-        amountGross: tip,
-        feeAmount: 0,
-        amountNet: tip,
-        km: 0,
-      });
-    }
+    // Gorjeta real virá do cliente/lojista quando houver lançamento de pedidos
+    const tip: number | null = null;
 
     await db
       .update(couriers)

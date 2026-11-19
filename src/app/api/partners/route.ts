@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { couriers } from "@/db/schema";
 import { ne } from "drizzle-orm";
-import { getSessionCourier } from "@/lib/seed";
-import { haversineKm, MAIN_BASE } from "@/lib/domain";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
+import { haversineKm } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -21,26 +21,16 @@ function livePosition(c: Row, now: number) {
 
 export async function GET(req: Request) {
   const me = await getSessionCourier(req);
+  if (!me) return unauthorized();
   const now = Date.now();
   const myPos = livePosition(me, now) ?? { lat: me.baseLat, lng: me.baseLng };
   const partners = await db.select().from(couriers).where(ne(couriers.id, me.id));
-  // Parceiros de demonstração acompanham o entregador quando ele está longe de SP
-  const meLive = livePosition(me, now);
-  const shift = meLive && haversineKm(meLive.lat, meLive.lng, MAIN_BASE.lat, MAIN_BASE.lng) > 60
-    ? { lat: meLive.lat - MAIN_BASE.lat, lng: meLive.lng - MAIN_BASE.lng }
-    : { lat: 0, lng: 0 };
-
   const result = partners
     .flatMap((p) => {
       const real = livePosition(p, now);
-      // Parceiros reais sem GPS recente não aparecem no radar.
-      // Parceiros de demonstração (sem e-mail) seguem com a deriva simulada.
-      const isDemo = !p.email;
-      if (!real && !isDemo) return [];
-      const pos = real ?? {
-        lat: p.baseLat + shift.lat + (Math.random() - 0.5) * 0.004,
-        lng: p.baseLng + shift.lng + (Math.random() - 0.5) * 0.004,
-      };
+      // Só aparece no radar quem enviou GPS nos últimos minutos
+      if (!real) return [];
+      const pos = real;
       return [{
         id: p.id,
         name: p.name,
@@ -48,7 +38,7 @@ export async function GET(req: Request) {
         status: p.status,
         lat: pos.lat,
         lng: pos.lng,
-        live: !!real,
+        live: true,
         distanceKm: Math.round(haversineKm(myPos.lat, myPos.lng, pos.lat, pos.lng) * 10) / 10,
         rating: p.rating,
       }];

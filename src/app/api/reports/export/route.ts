@@ -1,4 +1,4 @@
-import { getSessionCourier } from "@/lib/seed";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { computeReport } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 /** Exportação CSV do relatório (diário ou por hora, conforme o período) */
 export async function GET(req: Request) {
   const main = await getSessionCourier(req);
+  if (!main) return unauthorized();
   const period = parseInt(new URL(req.url).searchParams.get("period") ?? "30");
   const valid = [1, 15, 30, 90].includes(period) ? period : 30;
   const report = await computeReport(main.id, valid);

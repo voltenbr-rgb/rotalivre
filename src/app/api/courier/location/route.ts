@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { couriers } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getSessionCourier } from "@/lib/seed";
+import { getSessionCourier, unauthorized } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,7 @@ const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : n
  */
 export async function POST(req: Request) {
   const me = await getSessionCourier(req);
+  if (!me) return unauthorized();
   const body = await req.json().catch(() => ({}));
   const lat = num(body.lat);
   const lng = num(body.lng);
@@ -24,9 +25,13 @@ export async function POST(req: Request) {
   const heading = num(body.heading);
   const speed = num(body.speedKmh);
 
+  // Primeira posição real vira a base (cadastro nasce com a base padrão)
+  const firstFix = me.lastSeenAt == null;
+
   await db
     .update(couriers)
     .set({
+      ...(firstFix ? { baseLat: lat, baseLng: lng } : {}),
       lastLat: lat,
       lastLng: lng,
       lastAccuracyM: accuracy === null ? null : Math.round(accuracy),

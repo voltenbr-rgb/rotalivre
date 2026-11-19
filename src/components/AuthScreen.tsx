@@ -72,11 +72,6 @@ export default function AuthScreen({ onAuthenticated }: Props) {
     if (c) onAuthenticated(c);
   };
 
-  const doDemo = async () => {
-    const c = await call({ action: "demo" });
-    if (c) onAuthenticated(c);
-  };
-
   const lookupCep = async (raw: string) => {
     const digits = raw.replace(/\D/g, "");
     if (digits.length !== 8) return;
@@ -213,20 +208,6 @@ export default function AuthScreen({ onAuthenticated }: Props) {
                 </button>
               </div>
 
-              <div className="mt-6 rounded-3xl border border-white/8 bg-[#101319] p-4">
-                <p className="text-xs font-bold tracking-widest text-zinc-500 uppercase">Só quer conhecer?</p>
-                <p className="mt-1 text-sm text-zinc-400">
-                  Explore a praça com a conta de demonstração do Rafael “Fumaça”, com histórico real de 90 dias.
-                </p>
-                <button
-                  onClick={doDemo}
-                  disabled={busy}
-                  className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/8 text-sm font-extrabold text-white transition active:scale-[0.98] disabled:opacity-50"
-                >
-                  {busy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Eye className="h-5 w-5 text-lime-300" />}
-                  ACESSAR DEMONSTRAÇÃO
-                </button>
-              </div>
               <ErrorBox msg={serverError} />
               <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-zinc-600">
                 <ShieldCheck className="h-3.5 w-3.5" /> Seus dados ficam só com você. Sem fidelidade, sem punição.

@@ -1,27 +1,19 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { couriers, messages } from "@/db/schema";
+import { couriers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { ensureSeeded, getMainCourier } from "@/lib/seed";
 import { MAIN_BASE } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Acesso multiusuário:
- * - action "demo": entra na conta de demonstração (Rafael "Fumaça")
  * - action "login": entra com o e-mail cadastrado
  * - action "register": cadastro completo de novo associado
  */
 export async function POST(req: Request) {
-  await ensureSeeded();
   const body = await req.json();
   const action = body.action as string;
-
-  if (action === "demo") {
-    const main = await getMainCourier();
-    return NextResponse.json({ courier: main });
-  }
 
   if (action === "login") {
     const email = String(body.email ?? "").trim().toLowerCase();
@@ -88,16 +80,6 @@ export async function POST(req: Request) {
         totalDeliveries: 0,
       })
       .returning();
-
-    // Boas-vindas da rede no canal regional
-    const main = await getMainCourier();
-    await db.insert(messages).values({
-      courierId: main.id,
-      channel: "Zona Sul",
-      kind: "texto",
-      content: `Salve, rede! Tem associado novo na praça: ${created.name.split(" ")[0]} "${created.nickname}" acabou de entrar. Bem-vindo(a) ao RotaLivre!`,
-      neighborhood: created.neighborhood,
-    });
 
     return NextResponse.json({ courier: created });
   }

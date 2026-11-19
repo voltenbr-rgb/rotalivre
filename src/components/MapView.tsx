@@ -434,39 +434,6 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gps.fix, mapReady]);
 
-  /* ---------- movimento simulado (somente sem GPS: modo demonstração) ---------- */
-  useEffect(() => {
-    if (gpsActive) return;
-    const t = setInterval(() => {
-      const cur = posRef.current;
-      let target = { lat: courier.baseLat, lng: courier.baseLng };
-      if (activeOrder) {
-        target =
-          activeOrder.status === "accepted"
-            ? { lat: activeOrder.pickupLat, lng: activeOrder.pickupLng }
-            : { lat: activeOrder.deliveryLat, lng: activeOrder.deliveryLng };
-      }
-      const dist = hav(cur.lat, cur.lng, target.lat, target.lng);
-      let next = cur;
-      if (dist > 0.03) {
-        const step = activeOrder ? 0.055 : 0.01;
-        next = {
-          lat: cur.lat + (target.lat - cur.lat) * step,
-          lng: cur.lng + (target.lng - cur.lng) * step,
-        };
-      } else if (!activeOrder) {
-        next = {
-          lat: cur.lat + (Math.random() - 0.5) * 0.0006,
-          lng: cur.lng + (Math.random() - 0.5) * 0.0006,
-        };
-      }
-      posRef.current = next;
-      courierMarkerRef.current?.setLatLng([next.lat, next.lng]);
-      setPos(next);
-    }, 2000);
-    return () => clearInterval(t);
-  }, [activeOrder, courier.baseLat, courier.baseLng, gpsActive]);
-
   /* ---------- confirmação: zera o "confirmar mesmo assim" ao trocar de etapa ---------- */
   useEffect(() => {
     setConfirmArmed(false);
@@ -654,7 +621,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
         </button>
       </div>
 
-      {/* Aviso de GPS desligado (o app segue em modo simulado) */}
+      {/* Aviso de GPS desligado */}
       {!gpsActive && viewMode === "rota" && (
         <div className="absolute top-[138px] left-3 z-[500] max-w-[62%] rounded-xl border border-amber-400/40 bg-[#0b0e13]/92 px-3 py-2 shadow-xl backdrop-blur-md">
           <p className="text-[11px] leading-snug font-bold text-amber-200">
@@ -665,8 +632,8 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
                 : gps.status === "unsupported"
                   ? "Este aparelho não tem GPS disponível."
                   : gps.status === "unavailable"
-                    ? "Sem sinal de GPS. Posição simulada."
-                    : "GPS desligado. Posição simulada."}
+                    ? "Sem sinal de GPS. Procurando…"
+                    : "GPS desligado. Ative para ver sua posição."}
           </p>
           {gps.status !== "requesting" && gps.status !== "unsupported" && (
             <button

@@ -158,3 +158,12 @@ export const sessions = sqliteTable("sessions", {
   createdAt: ts("created_at").notNull().$defaultFn(now),
   expiresAt: ts("expires_at").notNull(),
 });
+
+/* ------------------------------------------------------------------ */
+/* Áudio das mensagens do rádio (guardado só por 24 h, como o chat)    */
+/* ------------------------------------------------------------------ */
+export const messageAudio = sqliteTable("message_audio", {
+  messageId: integer("message_id").primaryKey(),
+  mime: text("mime").notNull(),
+  dataB64: text("data_b64").notNull(),
+});

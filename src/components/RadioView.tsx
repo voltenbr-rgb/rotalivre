@@ -7,8 +7,7 @@ import {
 } from "lucide-react";
 import type { ChatMessage, Courier } from "@/lib/types";
 import { ALERT_META, clockTime } from "@/lib/format";
-import { CHANNELS, DEFAULT_CHANNEL } from "@/lib/domain";
-import { apiFetch } from "@/lib/session";
+import { apiFetch, getToken } from "@/lib/session";
 import { useRecorder } from "@/lib/useRecorder";
 
 interface Props {
@@ -32,18 +31,20 @@ const ALERT_ICONS: Record<string, typeof ShieldExclamationPoint> = {
 const NAME_COLORS = ["text-lime-300", "text-sky-300", "text-amber-300", "text-pink-300", "text-teal-300", "text-orange-300", "text-violet-300"];
 
 export default function RadioView({ courier, notify }: Props) {
-  const [channel, setChannel] = useState(DEFAULT_CHANNEL);
+  // "perto" = raio de 15 km da minha posição; "cidade" = cidade do cadastro
+  const [scope, setScope] = useState<"perto" | "cidade">("perto");
+  const [cityName, setCityName] = useState(courier.city || "Minha cidade");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [audioUrls, setAudioUrls] = useState<Record<number, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef(0);
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch(`/api/messages?channel=${encodeURIComponent(channel)}`);
+      const res = await apiFetch(`/api/messages?scope=${scope}`);
       const data = await res.json();
+      if (data.city) setCityName(data.city);
       const list: ChatMessage[] = data.messages ?? [];
       const newOnes = list.filter((m) => m.id > lastIdRef.current && !m.isMe);
       if (lastIdRef.current > 0 && newOnes.length > 0) {
@@ -53,7 +54,7 @@ export default function RadioView({ courier, notify }: Props) {
       if (list.length) lastIdRef.current = Math.max(lastIdRef.current, list[list.length - 1].id);
       setMessages(list);
     } catch { /* mantém */ }
-  }, [channel, notify]);
+  }, [scope, notify]);
 
   useEffect(() => {
     lastIdRef.current = 0;
@@ -65,13 +66,13 @@ export default function RadioView({ courier, notify }: Props) {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, channel]);
+  }, [messages.length, scope]);
 
   const post = async (payload: Record<string, unknown>) => {
     const res = await apiFetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel, neighborhood: courier.neighborhood, ...payload }),
+      body: JSON.stringify({ neighborhood: courier.neighborhood, ...payload }),
     });
     const data = await res.json();
     if (data.message) {
@@ -100,9 +101,15 @@ export default function RadioView({ courier, notify }: Props) {
     if (navigator.vibrate) navigator.vibrate(type === "sos" ? [120, 60, 120] : 50);
   };
 
-  const recorder = useRecorder(async (durationSec, audioUrl) => {
-    const msg = await post({ kind: "audio", audioDurationSec: durationSec, content: "" });
-    if (msg && audioUrl) setAudioUrls((prev) => ({ ...prev, [msg.id]: audioUrl }));
+  const recorder = useRecorder(async (durationSec, audio) => {
+    let audioB64: string | undefined;
+    let audioMime: string | undefined;
+    if (audio) {
+      audioB64 = await blobToBase64(audio);
+      audioMime = audio.type || "audio/webm";
+    }
+    const msg = await post({ kind: "audio", audioDurationSec: durationSec, content: "", audioB64, audioMime });
+    if (!msg) notify("Não foi possível enviar o áudio", "warn");
   });
 
   const hasText = text.trim().length > 0;
@@ -110,19 +117,23 @@ export default function RadioView({ courier, notify }: Props) {
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[520px] flex-col bg-[#0b141a] lg:max-w-3xl">
-      {/* Canais */}
+      {/* Abas: perto de mim (raio) e minha cidade (cadastro) */}
       <div className="flex items-center gap-1.5 border-b border-white/5 bg-[#111b21] px-3 py-2">
-        {CHANNELS.map((c) => (
+        {([
+          { id: "perto", label: "Perto de mim" },
+          { id: "cidade", label: cityName },
+        ] as const).map((t) => (
           <button
-            key={c}
-            onClick={() => setChannel(c)}
-            className={`rounded-full px-3 py-1.5 text-[12px] font-bold transition ${
-              channel === c ? "bg-lime-400/15 text-lime-300" : "text-zinc-400"
+            key={t.id}
+            onClick={() => setScope(t.id)}
+            className={`max-w-[50%] truncate rounded-full px-3 py-1.5 text-[12px] font-bold transition ${
+              scope === t.id ? "bg-lime-400/15 text-lime-300" : "text-zinc-400"
             }`}
           >
-            {c}
+            {t.label}
           </button>
         ))}
+        <span className="ml-auto text-[10px] text-zinc-500">{scope === "perto" ? "raio de 15 km • 24 h" : "últimas 24 h"}</span>
       </div>
 
       {/* Mensagens */}
@@ -136,12 +147,11 @@ export default function RadioView({ courier, notify }: Props) {
             key={m.id}
             m={m}
             showName={!m.isMe && (i === 0 || messages[i - 1].courierId !== m.courierId || messages[i - 1].kind === "alerta")}
-            audioUrl={audioUrls[m.id]}
           />
         ))}
         {messages.length === 0 && (
           <p className="mx-auto mt-10 w-fit rounded-lg bg-[#182229] px-3 py-1.5 text-center text-xs text-zinc-400">
-            Nenhuma mensagem no canal {channel} ainda
+            {scope === "perto" ? "Ninguém falou por perto nas últimas 24 h" : `Nenhuma mensagem em ${cityName} nas últimas 24 h`}
           </p>
         )}
       </div>
@@ -209,7 +219,7 @@ export default function RadioView({ courier, notify }: Props) {
   );
 }
 
-function MessageBubble({ m, showName, audioUrl }: { m: ChatMessage; showName: boolean; audioUrl?: string }) {
+function MessageBubble({ m, showName }: { m: ChatMessage; showName: boolean }) {
   if (m.kind === "alerta") {
     const meta = ALERT_META[m.alertType ?? "risco"];
     const Icon = ALERT_ICONS[m.alertType ?? "risco"];
@@ -222,7 +232,8 @@ function MessageBubble({ m, showName, audioUrl }: { m: ChatMessage; showName: bo
           </p>
           <p className="mt-1 text-[13px] leading-snug text-zinc-100">{m.content}</p>
           <p className="mt-1 text-right text-[10px] text-zinc-400">
-            {m.isMe ? "Você" : m.senderNickname} • {clockTime(m.createdAt)}
+            {m.isMe ? "Você" : m.senderNickname}
+            {m.distanceKm != null && ` • a ${m.distanceKm.toString().replace(".", ",")} km`} • {clockTime(m.createdAt)}
           </p>
         </div>
       </div>
@@ -241,10 +252,17 @@ function MessageBubble({ m, showName, audioUrl }: { m: ChatMessage; showName: bo
         {showName && (
           <p className={`text-[12px] font-bold ${nameColor}`}>
             {m.senderNickname || m.senderName.split(" ")[0]}
+            {m.distanceKm != null && (
+              <span className="ml-1.5 font-normal text-white/40">• a {m.distanceKm.toString().replace(".", ",")} km</span>
+            )}
           </p>
         )}
         {m.kind === "audio" ? (
-          <AudioBubble duration={m.audioDurationSec ?? 5} url={audioUrl} seedId={m.id} />
+          <AudioBubble
+            duration={m.audioDurationSec ?? 5}
+            url={m.audioUrl ? `${m.audioUrl}?t=${encodeURIComponent(getToken() ?? "")}` : undefined}
+            seedId={m.id}
+          />
         ) : (
           <p className="pr-12 text-[14.5px] leading-snug break-words whitespace-pre-wrap text-zinc-100">{m.content}</p>
         )}
@@ -257,6 +275,7 @@ function MessageBubble({ m, showName, audioUrl }: { m: ChatMessage; showName: bo
 function AudioBubble({ duration, url, seedId }: { duration: number; url?: string; seedId: number }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [unavailable, setUnavailable] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -266,15 +285,6 @@ function AudioBubble({ duration, url, seedId }: { duration: number; url?: string
     if (timerRef.current) clearInterval(timerRef.current);
     setPlaying(false);
     setProgress(0);
-  };
-
-  const simulate = () => {
-    const started = Date.now();
-    timerRef.current = setInterval(() => {
-      const p = (Date.now() - started) / (duration * 1000);
-      if (p >= 1) stop();
-      else setProgress(p);
-    }, 100);
   };
 
   const toggle = () => {
@@ -291,9 +301,13 @@ function AudioBubble({ duration, url, seedId }: { duration: number; url?: string
       audioRef.current.ontimeupdate = () => {
         if (audioRef.current && duration > 0) setProgress(audioRef.current.currentTime / duration);
       };
-      audioRef.current.play().catch(() => simulate());
+      audioRef.current.play().catch(() => {
+        setPlaying(false);
+        setUnavailable(true);
+      });
     } else {
-      simulate();
+      setPlaying(false);
+      setUnavailable(true);
     }
   };
 
@@ -315,7 +329,19 @@ function AudioBubble({ duration, url, seedId }: { duration: number; url?: string
           />
         ))}
       </span>
-      <span className="absolute bottom-1 left-12 text-[10px] text-white/50 tabular-nums">{total}</span>
+      <span className="absolute bottom-1 left-12 text-[10px] text-white/50 tabular-nums">
+        {unavailable ? "áudio indisponível" : total}
+      </span>
     </div>
   );
+}
+
+/** Blob → base64 (sem o prefixo data:) para enviar o áudio ao servidor */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
 }

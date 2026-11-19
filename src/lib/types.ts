@@ -99,6 +99,11 @@ export interface ChatMessage {
   audioDurationSec: number | null;
   neighborhood: string;
   createdAt: string;
+  senderPhoto?: string | null;
+  /** Áudio salvo no servidor (24 h) */
+  audioUrl?: string | null;
+  /** Distância de quem enviou (aba "Perto de mim") */
+  distanceKm?: number | null;
 }
 
 export interface ReportData {

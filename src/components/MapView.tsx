@@ -551,7 +551,6 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          channel: "Geral",
           kind: "alerta",
           alertType: type,
           content,

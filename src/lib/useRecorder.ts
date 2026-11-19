@@ -8,7 +8,7 @@ const MAX_SEC = 60;
  * Gravação de áudio no estilo WhatsApp (toque para gravar, botões para enviar/cancelar).
  * Usa o MediaRecorder do navegador; sem permissão de microfone a duração ainda é medida.
  */
-export function useRecorder(onDone: (durationSec: number, audioUrl: string | null) => void) {
+export function useRecorder(onDone: (durationSec: number, audio: Blob | null) => void) {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -69,7 +69,11 @@ export function useRecorder(onDone: (durationSec: number, audioUrl: string | nul
         return;
       }
       streamRef.current = stream;
-      const rec = new MediaRecorder(stream);
+      // Voz comprimida (~24 kbps): 60 s ≈ 180 KB. Android grava webm/opus; iPhone, mp4/aac.
+      const mimeType = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(
+        (t) => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(t),
+      );
+      const rec = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 24000 });
       chunksRef.current = [];
       rec.ondataavailable = (ev) => chunksRef.current.push(ev.data);
       rec.onstop = () => {
@@ -77,7 +81,7 @@ export function useRecorder(onDone: (durationSec: number, audioUrl: string | nul
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
         const cancelled = cancelRef.current;
         cleanup();
-        if (!cancelled) onDoneRef.current(dur, URL.createObjectURL(blob));
+        if (!cancelled) onDoneRef.current(dur, blob.size > 0 ? blob : null);
       };
       recRef.current = rec;
       rec.start();

@@ -5,6 +5,7 @@ import { appConfig, orders } from "@/db/schema";
 import { CORUMBA_CENTER, generateOrder } from "@/lib/domain";
 import { fmtBRL, fmtKm } from "@/lib/format";
 import { notifyCouriersNear } from "@/lib/push";
+import { purgeOldMessages } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ export async function POST(req: Request) {
   if (!row[0] || token !== row[0].value) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
+
+  // Manutenção: rádio guarda só 24 h
+  await purgeOldMessages().catch((e) => console.error("purge:", e));
 
   const [order] = await db.insert(orders).values(generateOrder(CORUMBA_CENTER)).returning();
   const sent = await notifyCouriersNear(order.pickupLat, order.pickupLng, 30, {

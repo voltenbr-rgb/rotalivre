@@ -116,8 +116,11 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
         [courier.baseLat, courier.baseLng],
         13,
       );
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO',
+      // OpenStreetMap padrão (gratuito, sem chave). O visual escuro vem do CSS (.rl-dark-tiles).
+      // A CARTO passou a exigir chave de API para os mapas dela.
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        className: "rl-dark-tiles",
         maxZoom: 19,
       }).addTo(map);
 

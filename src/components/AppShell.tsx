@@ -265,9 +265,11 @@ export default function AppShell() {
 
         {/* Toast global */}
         {toast && (
-          <div key={toast.key} className="pointer-events-none fixed top-3 left-1/2 z-[80] w-full max-w-[440px] -translate-x-1/2 px-4 lg:left-auto lg:right-6 lg:translate-x-0">
+          <div key={toast.key} className="pointer-events-none fixed inset-x-0 z-[80] flex justify-center px-4 lg:left-auto lg:right-6 lg:justify-end"
+            style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}
+          >
             <div
-              className={`toast-in rounded-2xl border px-4 py-3 text-center text-sm font-bold shadow-2xl backdrop-blur-md ${
+              className={`toast-in w-full max-w-[440px] rounded-2xl border px-4 py-3 text-center text-sm font-bold shadow-2xl backdrop-blur-md ${
                 toast.tone === "sos"
                   ? "animate-pulse border-red-500/60 bg-red-950/90 text-red-100"
                   : toast.tone === "warn"

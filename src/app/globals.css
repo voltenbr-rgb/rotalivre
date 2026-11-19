@@ -28,6 +28,11 @@ body {
 }
 
 /* ---------- Leaflet dark ---------- */
+/* Mapa claro do OpenStreetMap convertido para tema escuro */
+.leaflet-tile-pane .rl-dark-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.6);
+}
+
 /* Garante que o reset do Tailwind não estique/encolha os blocos do mapa */
 .leaflet-container img,
 .leaflet-container .leaflet-tile {

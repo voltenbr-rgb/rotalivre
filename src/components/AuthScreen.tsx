@@ -7,6 +7,7 @@ import {
   Route, ShieldCheck, User, UserPlus, Wallet,
 } from "lucide-react";
 import type { Courier } from "@/lib/types";
+import { InstallButton } from "./InstallApp";
 
 interface Props {
   onAuthenticated: (courier: Courier) => void;
@@ -140,9 +141,8 @@ export default function AuthScreen({ onAuthenticated }: Props) {
         <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-white/6 bg-[#070a06] p-10 lg:flex">
           <div>
             <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-lime-400 shadow-[0_12px_30px_rgba(163,230,53,0.35)]">
-                <Bike className="h-6 w-6 text-zinc-950" />
-              </span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icons/icon-192.png" alt="RotaLivre" className="h-12 w-12 shrink-0 rounded-2xl" />
               <p className="font-display text-2xl font-black tracking-tight text-white">
                 Rota<span className="text-lime-400">Livre</span>
               </p>
@@ -173,9 +173,8 @@ export default function AuthScreen({ onAuthenticated }: Props) {
         {/* Área de acesso / cadastro */}
         <main className="flex flex-col px-5 py-8 lg:justify-center lg:px-14">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-400">
-              <Bike className="h-5 w-5 text-zinc-950" />
-            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icons/icon-192.png" alt="RotaLivre" className="h-11 w-11 shrink-0 rounded-2xl" />
             <div>
               <p className="font-display text-xl leading-none font-black text-white">
                 Rota<span className="text-lime-400">Livre</span>
@@ -208,6 +207,7 @@ export default function AuthScreen({ onAuthenticated }: Props) {
                 </button>
               </div>
 
+              <InstallButton className="mt-4 h-12 w-full text-sm" />
               <ErrorBox msg={serverError} />
               <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-zinc-600">
                 <ShieldCheck className="h-3.5 w-3.5" /> Seus dados ficam só com você. Sem fidelidade, sem punição.

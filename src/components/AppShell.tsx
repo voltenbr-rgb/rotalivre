@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bike, LayoutDashboard, LogOut, Map as MapIcon, Radio, User, Wallet } from "lucide-react";
+import { LayoutDashboard, LogOut, Map as MapIcon, Radio, User, Wallet } from "lucide-react";
 import type { Courier, CourierStatus, DashboardData, Order } from "@/lib/types";
 import { fmtBRL, initialsOf } from "@/lib/format";
 import { apiFetch, clearSession, getSessionId, setSessionId } from "@/lib/session";
@@ -146,9 +146,8 @@ export default function AppShell() {
   if (screen === "checking") {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-[#05070a]">
-        <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-lime-400 shadow-[0_16px_40px_rgba(163,230,53,0.35)]">
-          <Bike className="h-8 w-8 text-zinc-950" />
-        </span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icons/icon-192.png" alt="RotaLivre" className="h-16 w-16 rounded-3xl" />
         <p className="font-display text-2xl font-black tracking-tight text-white">
           Rota<span className="text-lime-400">Livre</span>
         </p>
@@ -166,9 +165,8 @@ export default function AppShell() {
       {/* ---------- Sidebar (notebook/desktop) ---------- */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-white/6 bg-[#07090d] lg:flex">
         <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-400 shadow-[0_10px_24px_rgba(163,230,53,0.3)]">
-            <Bike className="h-5 w-5 text-zinc-950" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon-192.png" alt="RotaLivre" className="h-11 w-11 shrink-0 rounded-2xl" />
           <div>
             <p className="font-display text-lg leading-none font-black text-white">
               Rota<span className="text-lime-400">Livre</span>

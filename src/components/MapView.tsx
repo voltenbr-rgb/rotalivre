@@ -14,7 +14,6 @@ import {
   BRAZIL_BOUNDS, BRAZIL_CITIES, REGION_BY_UF, REGION_COLORS, REGION_LABELS,
   searchCities, type BrazilCity,
 } from "@/lib/brazil";
-import PttButton from "./PttButton";
 import { useWakeLock, type useGeolocation } from "@/lib/useGeolocation";
 
 interface Props {
@@ -99,6 +98,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
   const followRef = useRef(true);
   const [following, setFollowing] = useState(true);
   const [confirmArmed, setConfirmArmed] = useState(false);
+  const [alertMenuOpen, setAlertMenuOpen] = useState(false);
 
   /* ---------- GPS real do celular ---------- */
   const gpsActive = gps.status === "active";
@@ -466,6 +466,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
   const navWaze = nextTarget ? `https://waze.com/ul?ll=${nextTarget.lat},${nextTarget.lng}&navigate=yes` : "#";
 
   const sendAlert = async (type: (typeof ALERTS)[number]["type"]) => {
+    setAlertMenuOpen(false);
     const meta = ALERT_META[type];
     const content =
       type === "sos"
@@ -495,15 +496,6 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
     } catch {
       notify("Falha ao enviar alerta", "warn");
     }
-  };
-
-  const sendPtt = async (durationSec: number) => {
-    await apiFetch("/api/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel: "Zona Sul", kind: "audio", audioDurationSec: durationSec, neighborhood: courier.neighborhood }),
-    }).catch(() => null);
-    notify(`Áudio de ${durationSec}s transmitido no canal Zona Sul (raio 5 km)`);
   };
 
   const recenter = () => {
@@ -630,6 +622,31 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
         >
           {gpsActive ? <LocateFixed className="h-5 w-5" /> : <LocateOff className="h-5 w-5" />}
         </button>
+        <div className="relative">
+          <button
+            onClick={() => setAlertMenuOpen((v) => !v)}
+            className={`flex w-full items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2.5 text-[11px] font-bold shadow-xl backdrop-blur-md transition ${
+              alertMenuOpen ? "border-amber-400/60 bg-amber-400/20 text-amber-100" : "border-white/10 bg-[#0b0e13]/85 text-amber-300"
+            }`}
+            aria-label="Alertar a rede"
+          >
+            <TriangleExclamationPoint className="h-4 w-4" /> Alertar
+          </button>
+          {alertMenuOpen && (
+            <div className="slide-up absolute top-0 right-full mr-2 flex w-44 flex-col gap-1.5 rounded-2xl border border-white/10 bg-[#0b0e13]/95 p-2 shadow-2xl backdrop-blur-md">
+              <p className="px-1 pb-0.5 text-[10px] font-bold tracking-widest text-zinc-500 uppercase">Avisar quem está perto</p>
+              {ALERTS.map((a) => (
+                <button
+                  key={a.type}
+                  onClick={() => sendAlert(a.type)}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-extrabold transition active:scale-95 ${a.classes}`}
+                >
+                  <a.icon className="h-4 w-4" /> {a.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Aviso de GPS desligado */}
@@ -659,7 +676,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
 
       {/* Legenda das regiões do Brasil */}
       {viewMode === "brasil" && !selectedCity && !hintDismissed && (
-        <div className="absolute right-3 bottom-[218px] left-3 z-[500] rounded-2xl border border-white/12 bg-[#0b0e13]/92 px-3.5 py-3 shadow-xl backdrop-blur-md lg:right-auto lg:w-[300px]">
+        <div className={`absolute right-3 ${activeOrder ? "bottom-[200px]" : "bottom-3"} left-3 z-[500] rounded-2xl border border-white/12 bg-[#0b0e13]/92 px-3.5 py-3 shadow-xl backdrop-blur-md lg:right-auto lg:w-[300px]`}>
           <div className="flex items-center justify-between">
             <p className="flex items-center gap-1.5 text-[11px] font-black tracking-widest text-white uppercase">
               <Flag className="h-4 w-4 text-lime-400" /> Regiões do Brasil
@@ -684,7 +701,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
 
       {/* Cartão da cidade selecionada */}
       {selectedCity && (
-        <div className="slide-up absolute right-3 bottom-[218px] left-3 z-[500] rounded-2xl border border-white/12 bg-[#0d1015]/92 p-3.5 shadow-2xl backdrop-blur-md lg:right-auto lg:w-[380px]">
+        <div className={`slide-up absolute right-3 ${activeOrder ? "bottom-[200px]" : "bottom-3"} left-3 z-[500] rounded-2xl border border-white/12 bg-[#0d1015]/92 p-3.5 shadow-2xl backdrop-blur-md lg:right-auto lg:w-[380px]`}>
           <div className="flex items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime-400/15 text-lime-300">
               <MapPin className="h-5 w-5" />
@@ -722,29 +739,6 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
           </div>
         </div>
       )}
-
-      {/* Alertas rápidos de 1 toque */}
-      <div className="absolute right-0 bottom-36 left-0 z-[500] px-3">
-        <p className="mb-1.5 pl-1 text-[10px] font-bold tracking-widest text-zinc-400 uppercase [text-shadow:0_1px_6px_rgba(0,0,0,0.9)]">
-          Alertar a rede (1 toque)
-        </p>
-        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-          {ALERTS.map((a) => (
-            <button
-              key={a.type}
-              onClick={() => sendAlert(a.type)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2.5 text-xs font-extrabold shadow-lg backdrop-blur-md transition active:scale-95 ${a.classes} ${a.type === "sos" ? "animate-pulse" : ""}`}
-            >
-              <a.icon className="h-4 w-4" /> {a.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* PTT flutuante */}
-      <div className="absolute right-3 bottom-24 z-[500]">
-        <PttButton onSend={sendPtt} size="md" label="PTT" />
-      </div>
 
       {/* Card da entrega ativa — partida, destino e navegação externa */}
       {activeOrder && nextTarget && (

@@ -2,25 +2,54 @@
 
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Check, Copy, Download, Plus, Share, Smartphone, X } from "lucide-react";
+import { Check, Copy, Download, Monitor, Plus, Share, Smartphone, X } from "lucide-react";
 import { dismissInstall, isInstallDismissed } from "@/lib/session";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+export type Platform = "ios" | "android" | "desktop";
+
+/*
+ * O navegador dispara "beforeinstallprompt" uma única vez, logo que a página
+ * carrega. Capturamos aqui no nível do módulo para não perder o evento quando
+ * o botão de instalar só aparece depois (perfil, tela de login etc.).
+ */
+let earlyPrompt: any = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    earlyPrompt = e;
+    window.dispatchEvent(new Event("rl-install-available"));
+  });
+}
+
+function detectPlatform(): Platform {
+  const ua = window.navigator.userAgent;
+  // iPad com iPadOS se apresenta como Mac: detecta pelo toque
+  if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+  if (/android|mobile/i.test(ua)) return "android";
+  return "desktop";
+}
+
 export function usePwaInstall() {
   const [deferred, setDeferred] = useState<any>(null);
   const [standalone, setStandalone] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [platform, setPlatform] = useState<Platform>("android");
 
   useEffect(() => {
     const mq = window.matchMedia("(display-mode: standalone)");
     setStandalone(mq.matches || (window.navigator as any).standalone === true);
-    setIsIOS(/iphone|ipad|ipod/i.test(window.navigator.userAgent));
+    setPlatform(detectPlatform());
+    if (earlyPrompt) setDeferred(earlyPrompt);
+    const onAvailable = () => setDeferred(earlyPrompt);
+    window.addEventListener("rl-install-available", onAvailable);
     const onPrompt = (e: Event) => {
       e.preventDefault();
+      earlyPrompt = e;
       setDeferred(e);
     };
     const onInstalled = () => {
+      earlyPrompt = null;
       setStandalone(true);
       setDeferred(null);
     };
@@ -29,6 +58,7 @@ export function usePwaInstall() {
     return () => {
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("appinstalled", onInstalled);
+      window.removeEventListener("rl-install-available", onAvailable);
     };
   }, []);
 
@@ -37,18 +67,19 @@ export function usePwaInstall() {
     deferred.prompt();
     const choice = await deferred.userChoice;
     if (choice.outcome === "accepted") {
+      earlyPrompt = null;
       setDeferred(null);
       return true;
     }
     return false;
   }, [deferred]);
 
-  return { canPrompt: !!deferred, standalone, isIOS, promptInstall };
+  return { canPrompt: !!deferred, standalone, isIOS: platform === "ios", platform, promptInstall };
 }
 
 /** Botão "Baixar no telefone" — instala direto quando o navegador permite; senão abre o guia */
-export function InstallButton({ className = "", label = "Baixar no telefone" }: { className?: string; label?: string }) {
-  const { canPrompt, standalone, isIOS, promptInstall } = usePwaInstall();
+export function InstallButton({ className = "", label }: { className?: string; label?: string }) {
+  const { canPrompt, standalone, platform, promptInstall } = usePwaInstall();
   const [open, setOpen] = useState(false);
 
   if (standalone) return null;
@@ -68,16 +99,17 @@ export function InstallButton({ className = "", label = "Baixar no telefone" }: 
         onClick={click}
         className={`flex items-center justify-center gap-2 rounded-2xl bg-lime-400 font-black text-zinc-950 shadow-[0_10px_26px_rgba(163,230,53,0.3)] transition active:scale-95 ${className}`}
       >
-        <Smartphone className="h-5 w-5" /> {label}
+        {platform === "desktop" ? <Monitor className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}{" "}
+        {label ?? (platform === "desktop" ? "Instalar no computador" : "Instalar no celular")}
       </button>
-      <InstallModal open={open} onClose={() => setOpen(false)} isIOS={isIOS} canPrompt={canPrompt} onPrompt={promptInstall} />
+      <InstallModal open={open} onClose={() => setOpen(false)} platform={platform} canPrompt={canPrompt} onPrompt={promptInstall} />
     </>
   );
 }
 
 /** Banner de instalação exibido no topo da tela inicial */
 export function InstallBanner() {
-  const { canPrompt, standalone, isIOS, promptInstall } = usePwaInstall();
+  const { canPrompt, standalone, platform, promptInstall } = usePwaInstall();
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
 
@@ -100,7 +132,9 @@ export function InstallBanner() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon-512.png" alt="RotaLivre" className="h-12 w-12 shrink-0 rounded-2xl" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-extrabold text-white">RotaLivre no seu telefone</p>
+          <p className="text-sm font-extrabold text-white">
+            {platform === "desktop" ? "RotaLivre no seu computador" : "RotaLivre no seu celular"}
+          </p>
           <p className="text-[11px] leading-snug text-zinc-400">
             Instale o app: abre em tela cheia, mais rápido e com o rádio a um toque.
           </p>
@@ -122,17 +156,17 @@ export function InstallBanner() {
           <X className="h-4 w-4" />
         </button>
       </section>
-      <InstallModal open={open} onClose={() => setOpen(false)} isIOS={isIOS} canPrompt={canPrompt} onPrompt={promptInstall} />
+      <InstallModal open={open} onClose={() => setOpen(false)} platform={platform} canPrompt={canPrompt} onPrompt={promptInstall} />
     </>
   );
 }
 
 function InstallModal({
-  open, onClose, isIOS, canPrompt, onPrompt,
+  open, onClose, platform, canPrompt, onPrompt,
 }: {
   open: boolean;
   onClose: () => void;
-  isIOS: boolean;
+  platform: Platform;
   canPrompt: boolean;
   onPrompt: () => Promise<boolean>;
 }) {
@@ -174,7 +208,7 @@ function InstallModal({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/icons/icon-512.png" alt="RotaLivre" className="h-12 w-12 rounded-2xl" />
             <div>
-              <p className="font-display text-lg leading-tight font-extrabold text-white">Baixar o RotaLivre</p>
+              <p className="font-display text-lg leading-tight font-extrabold text-white">Instalar o RotaLivre</p>
               <p className="text-xs text-zinc-400">Grátis • Sem ocupar quase nada de memória</p>
             </div>
           </div>
@@ -194,9 +228,11 @@ function InstallModal({
           </button>
         )}
 
-        {/* QR para abrir no celular a partir do notebook */}
+        {/* QR para abrir no celular a partir do computador */}
         <div className="mt-5 rounded-2xl border border-white/8 bg-white/3 p-4 text-center">
-          <p className="text-xs font-bold tracking-widest text-zinc-400 uppercase">No notebook? Aponte a câmera do celular</p>
+          <p className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
+            {platform === "desktop" ? "Quer no celular? Aponte a câmera para o código" : "Passe para outro aparelho"}
+          </p>
           {qr ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={qr} alt="QR Code para abrir o RotaLivre no celular" className="mx-auto mt-3 h-44 w-44 rounded-xl" />
@@ -215,19 +251,25 @@ function InstallModal({
         {/* Passo a passo por plataforma */}
         <div className="mt-4 space-y-3">
           <p className="text-xs font-bold tracking-widest text-zinc-400 uppercase">
-            {isIOS ? "No iPhone (Safari)" : "No Android (Chrome)"}
+            {platform === "ios" ? "No iPhone (Safari)" : platform === "android" ? "No Android" : "No computador (Chrome ou Edge)"}
           </p>
-          {isIOS ? (
+          {platform === "ios" ? (
             <ol className="space-y-2.5 text-sm text-zinc-300">
-              <Step n={1} icon={<Share className="h-4 w-4" />} text="Toque no botão Compartilhar, na barra do Safari" />
+              <Step n={1} icon={<Share className="h-4 w-4" />} text="Abra no Safari e toque no botão Compartilhar" />
               <Step n={2} icon={<Plus className="h-4 w-4" />} text="Escolha “Adicionar à Tela de Início”" />
-              <Step n={3} icon={<Check className="h-4 w-4" />} text="Confirme em “Adicionar” — o RotaLivre vira um app na sua tela" />
+              <Step n={3} icon={<Check className="h-4 w-4" />} text="Toque em “Adicionar”: o RotaLivre aparece com o ícone na sua tela" />
+            </ol>
+          ) : platform === "android" ? (
+            <ol className="space-y-2.5 text-sm text-zinc-300">
+              <Step n={1} icon={<Smartphone className="h-4 w-4" />} text="Abra este endereço no Chrome, Brave ou Samsung Internet" />
+              <Step n={2} icon={<Download className="h-4 w-4" />} text="Toque no menu ⋮ e em “Instalar app” ou “Adicionar à tela inicial”" />
+              <Step n={3} icon={<Check className="h-4 w-4" />} text="Pronto: o RotaLivre abre em tela cheia, como um aplicativo" />
             </ol>
           ) : (
             <ol className="space-y-2.5 text-sm text-zinc-300">
-              <Step n={1} icon={<Smartphone className="h-4 w-4" />} text="Abra este endereço no Chrome do seu celular" />
-              <Step n={2} icon={<Download className="h-4 w-4" />} text="Toque no menu ⋮ e em “Instalar app” / “Adicionar à tela inicial”" />
-              <Step n={3} icon={<Check className="h-4 w-4" />} text="Pronto! O RotaLivre abre em tela cheia, igual aplicativo nativo" />
+              <Step n={1} icon={<Monitor className="h-4 w-4" />} text="Abra este endereço no Google Chrome ou no Microsoft Edge" />
+              <Step n={2} icon={<Download className="h-4 w-4" />} text="Clique no ícone de instalar no canto direito da barra de endereço, ou no menu ⋮ → “Instalar RotaLivre”" />
+              <Step n={3} icon={<Check className="h-4 w-4" />} text="O RotaLivre ganha atalho na área de trabalho e abre em janela própria" />
             </ol>
           )}
         </div>

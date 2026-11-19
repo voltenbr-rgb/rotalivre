@@ -5,7 +5,40 @@
 export const FEE_RATE = 0.05; // Taxa transparente RotaLivre: 5% fixo, sem caixa-preta
 export const MAIN_BASE = { lat: -23.6461, lng: -46.7678 }; // Campo Limpo, SP
 
-export const CHANNELS = ["Zona Sul", "Centro", "Zona Leste", "Zona Oeste", "Zona Norte"];
+export const DEFAULT_CHANNEL = "Geral";
+export const CHANNELS = ["Geral", "Corumbá", "Ladário"];
+
+/* ------------------------------------------------------------------ */
+/* Corumbá e Ladário (MS) — região de operação atual                   */
+/* Coordenadas aproximadas dos bairros, só para os pedidos de teste.   */
+/* ------------------------------------------------------------------ */
+export const CORUMBA_CENTER = { lat: -19.0105, lng: -57.645 };
+
+export const CORUMBA_NEIGHBORHOODS = [
+  { name: "Centro", city: "Corumbá", lat: -19.0085, lng: -57.652 },
+  { name: "Dom Bosco", city: "Corumbá", lat: -19.014, lng: -57.644 },
+  { name: "Popular Velha", city: "Corumbá", lat: -19.015, lng: -57.657 },
+  { name: "Popular Nova", city: "Corumbá", lat: -19.023, lng: -57.659 },
+  { name: "Universitário", city: "Corumbá", lat: -19.0185, lng: -57.637 },
+  { name: "Cristo Redentor", city: "Corumbá", lat: -19.023, lng: -57.645 },
+  { name: "Maria Leite", city: "Corumbá", lat: -19.027, lng: -57.651 },
+  { name: "Nova Corumbá", city: "Corumbá", lat: -19.03, lng: -57.64 },
+  { name: "Aeroporto", city: "Corumbá", lat: -19.012, lng: -57.668 },
+  { name: "Generoso", city: "Corumbá", lat: -19.02, lng: -57.628 },
+  { name: "Centro", city: "Ladário", lat: -19.0055, lng: -57.6005 },
+  { name: "Sul", city: "Ladário", lat: -19.0145, lng: -57.5995 },
+];
+
+const CORUMBA_STREETS = [
+  "Rua Delamare", "Rua Frei Mariano", "Rua Dom Aquino", "Rua América", "Rua Treze de Junho",
+  "Rua Cuiabá", "Av. General Rondon", "Rua Antônio Maria Coelho", "Av. Rio Branco",
+  "Rua Sete de Setembro", "Rua Tiradentes", "Rua Ladário",
+];
+
+/** Está em Corumbá/Ladário (até 40 km do centro)? */
+export function isCorumbaRegion(center: { lat: number; lng: number }) {
+  return haversineKm(center.lat, center.lng, CORUMBA_CENTER.lat, CORUMBA_CENTER.lng) < 40;
+}
 
 export const NEIGHBORHOODS = [
   { name: "Campo Limpo", lat: -23.6461, lng: -46.7678, channel: "Zona Sul" },
@@ -130,6 +163,7 @@ export function isFarFromDemoBase(center: { lat: number; lng: number }) {
  * o mapa de bairros de SP é transladado para perto do entregador.
  */
 export function generateOrder(center?: { lat: number; lng: number }): GeneratedOrder {
+  if (center && isCorumbaRegion(center)) return generateCorumbaOrder();
   const pickupN = pick(NEIGHBORHOODS.slice(0, 8));
   let deliveryN = pick(NEIGHBORHOODS);
   if (deliveryN.name === pickupN.name) deliveryN = pick(NEIGHBORHOODS);
@@ -176,6 +210,44 @@ export function generateOrder(center?: { lat: number; lng: number }): GeneratedO
 export function grossFromNet(net: number) {
   const gross = net / (1 - FEE_RATE);
   return { gross: Math.round(gross * 100) / 100, fee: Math.round((gross - net) * 100) / 100 };
+}
+
+/** Pedido de teste com coleta e entrega em bairros reais de Corumbá e Ladário */
+function generateCorumbaOrder(): GeneratedOrder {
+  const pickupN = pick(CORUMBA_NEIGHBORHOODS.slice(0, 7)); // comércio mais no centro
+  let deliveryN = pick(CORUMBA_NEIGHBORHOODS);
+  if (deliveryN === pickupN) deliveryN = pick(CORUMBA_NEIGHBORHOODS);
+  // Pequena variação (~300 m) sem jogar o ponto para dentro do rio (ao norte)
+  const spot = (n: { lat: number; lng: number }) => ({
+    lat: Math.min(-19.003, jitter(n.lat, 0.003)),
+    lng: jitter(n.lng, 0.003),
+  });
+  const p = spot(pickupN);
+  const d = spot(deliveryN);
+  const straight = haversineKm(p.lat, p.lng, d.lat, d.lng);
+  const distanceKm = Math.max(1, Math.round(straight * 1.32 * 10) / 10);
+  const valueNet = Math.round((5.5 + distanceKm * 2.3 + rnd(0, 2.5)) * 2) / 2;
+  const est = pick(ESTABLISHMENTS);
+  const label = (n: (typeof CORUMBA_NEIGHBORHOODS)[number]) => (n.city === "Ladário" ? `${n.name} (Ladário)` : n.name);
+  return {
+    code: orderCode(),
+    clientName: pick(CLIENT_NAMES),
+    establishment: est.name,
+    establishmentType: est.type,
+    pickupAddress: `${pick(CORUMBA_STREETS)}, ${Math.floor(rnd(20, 1500))}`,
+    pickupNeighborhood: label(pickupN),
+    pickupLat: p.lat,
+    pickupLng: p.lng,
+    deliveryAddress: `${pick(CORUMBA_STREETS)}, ${Math.floor(rnd(20, 1500))}`,
+    deliveryNeighborhood: label(deliveryN),
+    deliveryLat: d.lat,
+    deliveryLng: d.lng,
+    distanceKm,
+    valueNet,
+    etaMinutes: Math.round(10 + distanceKm * 3.2 + rnd(0, 5)),
+    itemsCount: Math.floor(rnd(1, 5)),
+    paymentMethod: pick(["Pix", "Cartão", "Pix", "Dinheiro"]),
+  };
 }
 
 export { rnd, pick };

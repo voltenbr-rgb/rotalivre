@@ -110,7 +110,7 @@ export const transactions = sqliteTable("transactions", {
 export const messages = sqliteTable("messages", {
   id: id(),
   courierId: integer("courier_id").notNull(),
-  channel: text("channel").notNull().default("Zona Sul"),
+  channel: text("channel").notNull().default("Geral"),
   // texto | audio | alerta
   kind: text("kind").notNull().default("texto"),
   // blitz | alagamento | risco | restaurante | sos (quando kind=alerta)

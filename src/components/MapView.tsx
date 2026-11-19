@@ -40,6 +40,13 @@ const ALERTS = [
   { type: "sos", label: "SOS", icon: Siren, classes: "border-red-500/60 bg-red-500/20 text-red-200" },
 ] as const;
 
+/** Emoji do tipo de comércio (pino da loja no mapa) */
+const STORE_EMOJI: Record<string, string> = {
+  Lanchonete: "🍔", Pizzaria: "🍕", Japonês: "🍣", Marmitas: "🍱", Sobremesas: "🍨",
+  Farmácia: "💊", Mercado: "🛒", Padaria: "🥖", Árabe: "🥙", Churrasco: "🥩",
+  Italiano: "🍝", Saudável: "🥗", Restaurante: "🍽️",
+};
+
 function hav(aLat: number, aLng: number, bLat: number, bLng: number) {
   const R = 6371;
   const dLat = ((bLat - aLat) * Math.PI) / 180;
@@ -74,6 +81,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
   const routeGroupRef = useRef<LayerGroup | null>(null);
   const partnerGroupRef = useRef<LayerGroup | null>(null);
   const brazilGroupRef = useRef<LayerGroup | null>(null);
+  const storesGroupRef = useRef<LayerGroup | null>(null);
   const areaGroupRef = useRef<LayerGroup | null>(null);
   const cityMarkerRef = useRef<Marker | null>(null);
   const statesLoadingRef = useRef(false);
@@ -134,6 +142,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
       areaGroupRef.current = L.layerGroup().addTo(map);
       routeGroupRef.current = L.layerGroup().addTo(map);
       partnerGroupRef.current = L.layerGroup().addTo(map);
+      storesGroupRef.current = L.layerGroup().addTo(map);
       brazilGroupRef.current = L.layerGroup().addTo(map);
 
       // Círculo do raio de atuação ao redor da base
@@ -170,6 +179,56 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ---------- lojas com pedido esperando (ícones no mapa) ---------- */
+  const [feed, setFeed] = useState<Order[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await apiFetch("/api/orders");
+        const data = await res.json();
+        if (alive) setFeed(data.orders ?? []);
+      } catch { /* mantém */ }
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const group = storesGroupRef.current;
+    if (!mapReady || !L || !group) return;
+    group.clearLayers();
+    // Durante uma entrega o mapa mostra só a rota; no modo Brasil, só o país
+    if (activeOrder || viewMode === "brasil") return;
+    const byStore = new Map<string, Order[]>();
+    for (const o of feed) {
+      const key = `${o.establishment}|${o.pickupLat.toFixed(3)}|${o.pickupLng.toFixed(3)}`;
+      byStore.set(key, [...(byStore.get(key) ?? []), o]);
+    }
+    for (const list of byStore.values()) {
+      const o = list[0];
+      const emoji = STORE_EMOJI[o.establishmentType] ?? "🏪";
+      const icon = L.divIcon({
+        className: "",
+        html: `<div class="rl-store">${emoji}${list.length > 1 ? `<span class="rl-store-badge">${list.length}</span>` : ""}</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+      });
+      const best = Math.max(...list.map((x) => x.valueNet));
+      L.marker([o.pickupLat, o.pickupLng], { icon, zIndexOffset: 600 })
+        .addTo(group)
+        .bindTooltip(
+          `${o.establishment} • ${o.pickupNeighborhood}<br/>${list.length > 1 ? `${list.length} pedidos • até ` : ""}${fmtBRL(best)} • ${fmtKm(o.distanceKm)}`,
+          { direction: "top", offset: [0, -16], className: "rl-tip" },
+        );
+    }
+  }, [feed, activeOrder, viewMode, mapReady]);
 
   /* ---------- parceiros (radar) ---------- */
   const loadPartners = useCallback(async () => {
@@ -477,7 +536,7 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          channel: "Zona Sul",
+          channel: "Geral",
           kind: "alerta",
           alertType: type,
           content,

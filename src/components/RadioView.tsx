@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CloudRainWind, Play, Pause, Radio, Send, ShieldExclamationPoint, Siren,
-  Store, TriangleExclamationPoint, Users,
+  CloudRainWind, Mic, Pause, Play, Send, ShieldExclamationPoint, Siren,
+  Store, Trash2, TriangleExclamationPoint, X,
 } from "lucide-react";
 import type { ChatMessage, Courier } from "@/lib/types";
-import { ALERT_META, clockTime, colorForId, initialsOf } from "@/lib/format";
-import { CHANNELS } from "@/lib/domain";
-import PttButton from "./PttButton";
+import { ALERT_META, clockTime } from "@/lib/format";
+import { CHANNELS, DEFAULT_CHANNEL } from "@/lib/domain";
 import { apiFetch } from "@/lib/session";
+import { useRecorder } from "@/lib/useRecorder";
 
 interface Props {
   courier: Courier;
@@ -17,21 +17,25 @@ interface Props {
 }
 
 const ALERT_BUTTONS = [
-  { type: "blitz", label: "Blitz", icon: ShieldExclamationPoint, classes: "border-sky-400/40 bg-sky-400/12 text-sky-200" },
-  { type: "alagamento", label: "Alagamento", icon: CloudRainWind, classes: "border-cyan-400/40 bg-cyan-400/12 text-cyan-200" },
-  { type: "risco", label: "Área de risco", icon: TriangleExclamationPoint, classes: "border-amber-400/40 bg-amber-400/12 text-amber-200" },
-  { type: "restaurante", label: "Restaurante lento", icon: Store, classes: "border-orange-400/40 bg-orange-400/12 text-orange-200" },
-  { type: "sos", label: "SOS", icon: Siren, classes: "border-red-500/60 bg-red-500/20 text-red-200" },
+  { type: "blitz", label: "Blitz", icon: ShieldExclamationPoint, color: "text-sky-300" },
+  { type: "alagamento", label: "Alagamento", icon: CloudRainWind, color: "text-cyan-300" },
+  { type: "risco", label: "Área de risco", icon: TriangleExclamationPoint, color: "text-amber-300" },
+  { type: "restaurante", label: "Restaurante lento", icon: Store, color: "text-orange-300" },
+  { type: "sos", label: "SOS", icon: Siren, color: "text-red-400" },
 ] as const;
 
 const ALERT_ICONS: Record<string, typeof ShieldExclamationPoint> = {
   blitz: ShieldExclamationPoint, alagamento: CloudRainWind, risco: TriangleExclamationPoint, restaurante: Store, sos: Siren,
 };
 
+/* Cores do nome de quem enviou (como nos grupos do WhatsApp) */
+const NAME_COLORS = ["text-lime-300", "text-sky-300", "text-amber-300", "text-pink-300", "text-teal-300", "text-orange-300", "text-violet-300"];
+
 export default function RadioView({ courier, notify }: Props) {
-  const [channel, setChannel] = useState("Zona Sul");
+  const [channel, setChannel] = useState(DEFAULT_CHANNEL);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [audioUrls, setAudioUrls] = useState<Record<number, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef(0);
@@ -85,180 +89,205 @@ export default function RadioView({ courier, notify }: Props) {
   };
 
   const sendAlert = async (type: (typeof ALERT_BUTTONS)[number]["type"]) => {
+    setAlertsOpen(false);
     const meta = ALERT_META[type];
     const content =
       type === "sos"
-        ? "Preciso de ajuda agora! Pane/acidente — quem estiver perto, por favor venha."
-        : `${meta.label} em ${courier.neighborhood} — fiquem atentos, rapaziada`;
+        ? "Preciso de ajuda agora! Pane/acidente. Quem estiver perto, por favor venha."
+        : `${meta.label} em ${courier.neighborhood || "minha região"}. Fiquem atentos!`;
     await post({ kind: "alerta", alertType: type, content });
-    notify(type === "sos" ? "SOS transmitido para toda a rede próxima" : `Alerta enviado ao canal ${channel}`, type === "sos" ? "sos" : "ok");
+    notify(type === "sos" ? "SOS enviado para a rede" : "Alerta enviado", type === "sos" ? "sos" : "ok");
     if (navigator.vibrate) navigator.vibrate(type === "sos" ? [120, 60, 120] : 50);
   };
 
-  const sendAudio = async (durationSec: number, audioUrl: string | null) => {
+  const recorder = useRecorder(async (durationSec, audioUrl) => {
     const msg = await post({ kind: "audio", audioDurationSec: durationSec, content: "" });
     if (msg && audioUrl) setAudioUrls((prev) => ({ ...prev, [msg.id]: audioUrl }));
-    notify(`Áudio de ${durationSec}s transmitido no canal ${channel}`);
-  };
+  });
+
+  const hasText = text.trim().length > 0;
+  const time = `${Math.floor(recorder.elapsed / 60)}:${String(recorder.elapsed % 60).padStart(2, "0")}`;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[520px] flex-col lg:max-w-3xl">
-      {/* Seletor de canal */}
-      <div className="border-b border-white/5 px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-display text-lg font-extrabold text-white">
-            <Radio className="h-5 w-5 text-lime-400" /> Rádio da rede
-          </h2>
-          <span className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-400">
-            <Users className="h-3.5 w-3.5 text-emerald-400" /> 6 parceiros ouvindo
-          </span>
-        </div>
-        <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto">
-          {CHANNELS.map((c) => (
-            <button
-              key={c}
-              onClick={() => setChannel(c)}
-              className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold whitespace-nowrap transition ${
-                channel === c ? "bg-lime-400 text-zinc-950" : "border border-white/10 bg-white/4 text-zinc-400"
-              }`}
-            >
-              {c} • 5 km
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] text-zinc-500">
-          Canal <span className="font-bold text-zinc-300">{channel}</span> — voz e texto com entregadores num raio de 5 km
-        </p>
+    <div className="mx-auto flex h-full w-full max-w-[520px] flex-col bg-[#0b141a] lg:max-w-3xl">
+      {/* Canais */}
+      <div className="flex items-center gap-1.5 border-b border-white/5 bg-[#111b21] px-3 py-2">
+        {CHANNELS.map((c) => (
+          <button
+            key={c}
+            onClick={() => setChannel(c)}
+            className={`rounded-full px-3 py-1.5 text-[12px] font-bold transition ${
+              channel === c ? "bg-lime-400/15 text-lime-300" : "text-zinc-400"
+            }`}
+          >
+            {c}
+          </button>
+        ))}
       </div>
 
-      {/* Alertas rápidos */}
-      <div className="border-b border-white/5 px-4 py-3">
-        <p className="mb-2 text-[10px] font-bold tracking-widest text-zinc-500 uppercase">Alertas rápidos — 1 toque</p>
-        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-0.5">
+      {/* Mensagens */}
+      <div
+        ref={scrollRef}
+        className="no-scrollbar flex-1 space-y-1.5 overflow-y-auto px-3 py-3"
+        onClick={() => setAlertsOpen(false)}
+      >
+        {messages.map((m, i) => (
+          <MessageBubble
+            key={m.id}
+            m={m}
+            showName={!m.isMe && (i === 0 || messages[i - 1].courierId !== m.courierId || messages[i - 1].kind === "alerta")}
+            audioUrl={audioUrls[m.id]}
+          />
+        ))}
+        {messages.length === 0 && (
+          <p className="mx-auto mt-10 w-fit rounded-lg bg-[#182229] px-3 py-1.5 text-center text-xs text-zinc-400">
+            Nenhuma mensagem no canal {channel} ainda
+          </p>
+        )}
+      </div>
+
+      {/* Menu de alertas */}
+      {alertsOpen && (
+        <div className="slide-up mx-3 mb-1 grid grid-cols-5 gap-1 rounded-2xl bg-[#1f2c34] p-2">
           {ALERT_BUTTONS.map((a) => (
             <button
               key={a.type}
               onClick={() => sendAlert(a.type)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2.5 text-xs font-extrabold transition active:scale-95 ${a.classes}`}
+              className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-300 active:bg-white/5"
             >
-              <a.icon className="h-4 w-4" /> {a.label}
+              <a.icon className={`h-5 w-5 ${a.color}`} />
+              {a.label}
             </button>
           ))}
         </div>
-      </div>
+      )}
 
-      {/* Mensagens */}
-      <div ref={scrollRef} className="no-scrollbar flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} m={m} audioUrl={audioUrls[m.id]} />
-        ))}
-        {messages.length === 0 && (
-          <p className="pt-10 text-center text-sm text-zinc-500">Canal silencioso por enquanto. Puxe conversa!</p>
+      {/* Barra de digitação */}
+      <div className="flex items-end gap-2 bg-[#0b141a] px-2 pt-1 pb-2">
+        {recorder.recording ? (
+          <div className="flex h-11 flex-1 items-center gap-3 rounded-full bg-[#1f2c34] pr-4 pl-1">
+            <button
+              onClick={recorder.cancel}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 active:bg-white/10"
+              aria-label="Cancelar áudio"
+            >
+              <Trash2 className="h-[18px] w-[18px]" />
+            </button>
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+            <span className="text-sm font-semibold text-zinc-200 tabular-nums">{time}</span>
+            <span className="truncate text-xs text-zinc-500">Gravando…</span>
+          </div>
+        ) : (
+          <div className="flex min-h-11 flex-1 items-center rounded-full bg-[#1f2c34] pr-2 pl-1">
+            <button
+              onClick={() => setAlertsOpen((v) => !v)}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${alertsOpen ? "text-amber-300" : "text-zinc-400"}`}
+              aria-label="Enviar alerta"
+            >
+              {alertsOpen ? <X className="h-5 w-5" /> : <TriangleExclamationPoint className="h-5 w-5" />}
+            </button>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendText()}
+              onFocus={() => setAlertsOpen(false)}
+              placeholder="Mensagem"
+              className="h-11 min-w-0 flex-1 bg-transparent px-1 text-[15px] text-white placeholder-zinc-500 outline-none"
+            />
+          </div>
         )}
-      </div>
 
-      {/* Composer + PTT */}
-      <div className="border-t border-white/8 bg-[#0a0d12] px-4 pt-3 pb-4">
-        <div className="flex items-center gap-2">
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendText()}
-            placeholder={`Mensagem no canal ${channel}…`}
-            className="h-13 flex-1 rounded-2xl border border-white/10 bg-white/4 px-4 py-3.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-lime-400/50"
-          />
-          <button
-            onClick={sendText}
-            disabled={!text.trim()}
-            className="flex h-13 w-13 shrink-0 items-center justify-center rounded-2xl bg-white/8 p-3.5 text-lime-300 transition active:scale-95 disabled:opacity-30"
-            aria-label="Enviar mensagem"
-          >
-            <Send className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="mt-3 flex justify-center">
-          <PttButton onSend={sendAudio} />
-        </div>
+        <button
+          onClick={recorder.recording ? recorder.send : hasText ? sendText : recorder.start}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-lime-400 text-zinc-950 transition active:scale-90"
+          aria-label={recorder.recording || hasText ? "Enviar" : "Gravar áudio"}
+        >
+          {recorder.recording || hasText ? <Send className="ml-0.5 h-5 w-5" /> : <Mic className="h-5 w-5" />}
+        </button>
       </div>
     </div>
   );
 }
 
-function MessageBubble({ m, audioUrl }: { m: ChatMessage; audioUrl?: string }) {
+function MessageBubble({ m, showName, audioUrl }: { m: ChatMessage; showName: boolean; audioUrl?: string }) {
   if (m.kind === "alerta") {
     const meta = ALERT_META[m.alertType ?? "risco"];
     const Icon = ALERT_ICONS[m.alertType ?? "risco"];
     return (
-      <div className={`slide-up rounded-2xl border p-3.5 ${meta.bg} ${meta.border}`}>
-        <div className="flex items-center gap-2">
-          <span className={`flex h-8 w-8 items-center justify-center rounded-xl bg-black/25 ${meta.color}`}>
-            <Icon className="h-4.5 w-4.5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className={`text-xs font-black tracking-wide uppercase ${meta.color}`}>{meta.label}</p>
-            <p className="text-[11px] text-zinc-400">
-              {m.senderNickname} • {m.neighborhood} • {clockTime(m.createdAt)}
-            </p>
-          </div>
-          {m.alertType === "sos" && (
-            <span className="animate-pulse rounded-md bg-red-500 px-2 py-1 text-[10px] font-black text-white">URGENTE</span>
-          )}
+      <div className="slide-up flex justify-center py-1">
+        <div className={`w-full max-w-[90%] rounded-xl border px-3 py-2 ${meta.bg} ${meta.border}`}>
+          <p className={`flex items-center gap-1.5 text-[11px] font-black tracking-wide uppercase ${meta.color}`}>
+            <Icon className="h-3.5 w-3.5" /> {meta.label}
+            {m.alertType === "sos" && <span className="ml-auto animate-pulse rounded bg-red-500 px-1.5 text-[9px] text-white">URGENTE</span>}
+          </p>
+          <p className="mt-1 text-[13px] leading-snug text-zinc-100">{m.content}</p>
+          <p className="mt-1 text-right text-[10px] text-zinc-400">
+            {m.isMe ? "Você" : m.senderNickname} • {clockTime(m.createdAt)}
+          </p>
         </div>
-        <p className="mt-2 text-sm leading-snug text-zinc-100">{m.content}</p>
       </div>
     );
   }
 
+  const nameColor = NAME_COLORS[m.courierId % NAME_COLORS.length];
+
   return (
-    <div className={`slide-up flex gap-2.5 ${m.isMe ? "flex-row-reverse" : ""}`}>
-      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-black text-zinc-950 ${colorForId(m.courierId)}`}>
-        {initialsOf(m.senderName)}
-      </span>
-      <div className={`max-w-[78%] ${m.isMe ? "text-right" : ""}`}>
-        <p className="text-[11px] font-semibold text-zinc-500">
-          {m.isMe ? "Você" : `${m.senderName.split(" ")[0]} “${m.senderNickname}”`} • {m.neighborhood} • {clockTime(m.createdAt)}
-        </p>
-        {m.kind === "audio" ? (
-          <AudioBubble duration={m.audioDurationSec ?? 5} url={audioUrl} isMe={m.isMe} seedId={m.id} />
-        ) : (
-          <div
-            className={`mt-1 inline-block rounded-2xl px-3.5 py-2.5 text-left text-sm leading-snug ${
-              m.isMe ? "rounded-br-md bg-lime-400 font-medium text-zinc-950" : "rounded-bl-md bg-white/6 text-zinc-100"
-            }`}
-          >
-            {m.content}
-          </div>
+    <div className={`slide-up flex ${m.isMe ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`relative max-w-[80%] rounded-xl px-2.5 pt-1.5 pb-1 shadow-sm ${
+          m.isMe ? "rounded-tr-sm bg-[#005c4b]" : "rounded-tl-sm bg-[#202c33]"
+        }`}
+      >
+        {showName && (
+          <p className={`text-[12px] font-bold ${nameColor}`}>
+            {m.senderNickname || m.senderName.split(" ")[0]}
+          </p>
         )}
+        {m.kind === "audio" ? (
+          <AudioBubble duration={m.audioDurationSec ?? 5} url={audioUrl} seedId={m.id} />
+        ) : (
+          <p className="pr-12 text-[14.5px] leading-snug break-words whitespace-pre-wrap text-zinc-100">{m.content}</p>
+        )}
+        <span className="absolute right-2 bottom-1 text-[10px] text-white/50">{clockTime(m.createdAt)}</span>
       </div>
     </div>
   );
 }
 
-function AudioBubble({ duration, url, isMe, seedId }: { duration: number; url?: string; isMe: boolean; seedId: number }) {
+function AudioBubble({ duration, url, seedId }: { duration: number; url?: string; seedId: number }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const bars = Array.from({ length: 22 }, (_, i) => 6 + ((seedId * 7 + i * 13) % 14));
+  const bars = Array.from({ length: 24 }, (_, i) => 5 + ((seedId * 7 + i * 13) % 13));
 
-  const stopSim = () => {
+  const stop = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     setPlaying(false);
     setProgress(0);
   };
 
+  const simulate = () => {
+    const started = Date.now();
+    timerRef.current = setInterval(() => {
+      const p = (Date.now() - started) / (duration * 1000);
+      if (p >= 1) stop();
+      else setProgress(p);
+    }, 100);
+  };
+
   const toggle = () => {
     if (playing) {
       audioRef.current?.pause();
-      stopSim();
+      stop();
       return;
     }
     setPlaying(true);
     if (url) {
       if (!audioRef.current) audioRef.current = new Audio(url);
       audioRef.current.currentTime = 0;
-      audioRef.current.onended = () => stopSim();
+      audioRef.current.onended = () => stop();
       audioRef.current.ontimeupdate = () => {
         if (audioRef.current && duration > 0) setProgress(audioRef.current.currentTime / duration);
       };
@@ -268,40 +297,25 @@ function AudioBubble({ duration, url, isMe, seedId }: { duration: number; url?: 
     }
   };
 
-  const simulate = () => {
-    const started = Date.now();
-    timerRef.current = setInterval(() => {
-      const p = (Date.now() - started) / (duration * 1000);
-      if (p >= 1) stopSim();
-      else setProgress(p);
-    }, 100);
-  };
-
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
+  const total = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`;
+
   return (
-    <div
-      className={`mt-1 flex items-center gap-2.5 rounded-2xl px-3 py-2.5 ${
-        isMe ? "rounded-br-md bg-lime-400 text-zinc-950" : "rounded-bl-md bg-white/6 text-zinc-100"
-      }`}
-    >
-      <button
-        onClick={toggle}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${isMe ? "bg-zinc-950 text-lime-400" : "bg-lime-400 text-zinc-950"}`}
-        aria-label={playing ? "Pausar áudio" : "Ouvir áudio"}
-      >
-        {playing ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}
+    <div className="flex min-w-[210px] items-center gap-2 pr-10 pb-2">
+      <button onClick={toggle} className="flex h-8 w-8 shrink-0 items-center justify-center text-zinc-200" aria-label={playing ? "Pausar" : "Ouvir"}>
+        {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
       </button>
-      <span className="flex h-6 items-center gap-[2.5px]">
+      <span className="flex h-6 flex-1 items-center gap-[2px]">
         {bars.map((h, i) => (
           <span
             key={i}
-            className={`w-[3px] rounded-full ${i / bars.length <= progress ? (isMe ? "bg-zinc-950" : "bg-lime-300") : isMe ? "bg-zinc-950/30" : "bg-zinc-600"}`}
+            className={`w-[2.5px] rounded-full ${i / bars.length <= progress ? "bg-lime-300" : "bg-white/35"}`}
             style={{ height: `${h}px` }}
           />
         ))}
       </span>
-      <span className="text-xs font-bold tabular-nums">0:{String(duration).padStart(2, "0")}</span>
+      <span className="absolute bottom-1 left-12 text-[10px] text-white/50 tabular-nums">{total}</span>
     </div>
   );
 }

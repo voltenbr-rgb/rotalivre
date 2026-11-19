@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const main = await getSessionCourier(req);
   if (!main) return unauthorized();
-  const channel = new URL(req.url).searchParams.get("channel") ?? "Zona Sul";
+  const channel = new URL(req.url).searchParams.get("channel") ?? "Geral";
 
   const rows = await db
     .select({
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     .insert(messages)
     .values({
       courierId: main.id,
-      channel: body.channel ?? "Zona Sul",
+      channel: body.channel ?? "Geral",
       kind: body.kind ?? "texto",
       alertType: body.alertType ?? null,
       content: body.content ?? "",

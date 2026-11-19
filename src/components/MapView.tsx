@@ -582,8 +582,11 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
   const cityDistance = selectedCity ? hav(courier.baseLat, courier.baseLng, selectedCity.lat, selectedCity.lng) : 0;
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#0b0e13]">
-      <div ref={containerRef} className={`absolute inset-0 z-0 ${darkMap ? "rl-map-dark" : "rl-map-light"}`} />
+    <div className={`relative h-full w-full overflow-hidden ${darkMap ? "bg-[#0b0e13]" : "bg-[#e5e3df]"}`}>
+      {/* A cor do mapa fica num invólucro: a div do Leaflet não pode ter a classe trocada pelo React */}
+      <div className={`absolute inset-0 z-0 ${darkMap ? "rl-map-dark" : "rl-map-light"}`}>
+        <div ref={containerRef} className="absolute inset-0" />
+      </div>
 
       {/* Chip superior de navegação */}
       <div className="absolute top-3 right-3 left-3 z-[500]">

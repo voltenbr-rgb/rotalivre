@@ -28,6 +28,11 @@ body {
 }
 
 /* ---------- Leaflet dark ---------- */
+/* Troca suave entre mapa claro e escuro */
+.leaflet-tile-pane .rl-dark-tiles {
+  transition: filter 0.25s ease;
+}
+
 /* Modo escuro (opcional): mapa do OpenStreetMap invertido. O padrão é o mapa claro normal. */
 .rl-map-dark .leaflet-tile-pane .rl-dark-tiles {
   filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.6);
@@ -73,7 +78,7 @@ body {
 .leaflet-container {
   background: #0b0e13;
 }
-.rl-map-light.leaflet-container {
+.rl-map-light .leaflet-container {
   background: #e5e3df;
 }
 .leaflet-container {

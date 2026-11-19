@@ -93,7 +93,7 @@ export interface ChatMessage {
   senderNickname: string;
   isMe: boolean;
   channel: string;
-  kind: "texto" | "audio" | "alerta";
+  kind: "texto" | "audio" | "alerta" | "foto";
   alertType: AlertType | null;
   content: string;
   audioDurationSec: number | null;
@@ -102,6 +102,8 @@ export interface ChatMessage {
   senderPhoto?: string | null;
   /** Áudio salvo no servidor (24 h) */
   audioUrl?: string | null;
+  /** Foto salva no servidor (5 h); null = expirou */
+  photoUrl?: string | null;
   /** Distância de quem enviou (aba "Perto de mim") */
   distanceKm?: number | null;
 }

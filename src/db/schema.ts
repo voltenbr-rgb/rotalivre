@@ -167,3 +167,13 @@ export const messageAudio = sqliteTable("message_audio", {
   mime: text("mime").notNull(),
   dataB64: text("data_b64").notNull(),
 });
+
+/* ------------------------------------------------------------------ */
+/* Fotos do rádio (guardadas só por 5 h; a mensagem fica até 24 h)     */
+/* ------------------------------------------------------------------ */
+export const messagePhoto = sqliteTable("message_photo", {
+  messageId: integer("message_id").primaryKey(),
+  mime: text("mime").notNull(),
+  dataB64: text("data_b64").notNull(),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+});

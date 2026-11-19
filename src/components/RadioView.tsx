@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ChevronDown, CloudRainWind, Mic, Moon, Sun, Pause, Play, Send, ShieldExclamationPoint, Siren,
+  Camera, ChevronDown, CloudRainWind, ImageOff, Mic, Moon, Sun, Pause, Play, Send, ShieldExclamationPoint, Siren,
   Store, Trash2, TriangleExclamationPoint, X,
 } from "lucide-react";
 import type { ChatMessage, Courier, CourierStatus } from "@/lib/types";
@@ -109,6 +109,11 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [alertsOpen, setAlertsOpen] = useState(false);
+  // Foto escolhida (já reduzida), aguardando o "enviar"
+  const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [viewer, setViewer] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef(0);
 
@@ -161,6 +166,41 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
     await post({ kind: "texto", content });
   };
 
+  /** Câmera/galeria → reduz no celular (máx. 1024 px, JPEG) → prévia */
+  const onPickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setPhotoBusy(true);
+    try {
+      setPendingPhoto(await shrinkImage(file, 1024, 0.72));
+      setAlertsOpen(false);
+    } catch {
+      notify("Não foi possível abrir essa foto", "warn");
+    } finally {
+      setPhotoBusy(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const sendPhoto = async () => {
+    if (!pendingPhoto) return;
+    const dataUrl = pendingPhoto;
+    const caption = text.trim();
+    setPendingPhoto(null);
+    setText("");
+    setPhotoBusy(true);
+    try {
+      const msg = await post({
+        kind: "foto",
+        content: caption,
+        photoMime: "image/jpeg",
+        photoB64: dataUrl.split(",")[1] ?? "",
+      });
+      if (!msg) notify("Não foi possível enviar a foto", "warn");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
   const sendAlert = async (type: (typeof ALERT_BUTTONS)[number]["type"]) => {
     setAlertsOpen(false);
     const meta = ALERT_META[type];
@@ -184,7 +224,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
     if (!msg) notify("Não foi possível enviar o áudio", "warn");
   });
 
-  const hasText = text.trim().length > 0;
+  const hasText = text.trim().length > 0 || !!pendingPhoto;
   const time = `${Math.floor(recorder.elapsed / 60)}:${String(recorder.elapsed % 60).padStart(2, "0")}`;
 
   return (
@@ -263,6 +303,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
             showName={!m.isMe && (i === 0 || messages[i - 1].courierId !== m.courierId || messages[i - 1].kind === "alerta")}
             T={T}
             light={light}
+            onOpenPhoto={setViewer}
           />
         ))}
         {messages.length === 0 && (
@@ -271,6 +312,21 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
           </p>
         )}
       </div>
+
+      {/* Foto em tela cheia */}
+      {viewer && (
+        <button
+          onClick={() => setViewer(null)}
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/90 p-4"
+          aria-label="Fechar foto"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={viewer} alt="Foto" className="max-h-full max-w-full rounded-lg object-contain" />
+          <span className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white">
+            <X className="h-6 w-6" />
+          </span>
+        </button>
+      )}
 
       {/* Menu de alertas */}
       {alertsOpen && (
@@ -285,6 +341,25 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
               {a.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Prévia da foto antes de enviar */}
+      {pendingPhoto && (
+        <div className={`slide-up mx-3 mb-1 flex items-center gap-3 rounded-2xl p-2 ${T.sheet}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={pendingPhoto} alt="Prévia" className="h-16 w-16 rounded-xl object-cover" />
+          <p className={`flex-1 text-xs ${T.sheetText}`}>
+            Foto pronta. Escreva uma legenda (opcional) e toque em enviar.
+            <span className={`block text-[10px] ${T.hint}`}>Fica disponível por 5 horas.</span>
+          </p>
+          <button
+            onClick={() => setPendingPhoto(null)}
+            className={`flex h-9 w-9 items-center justify-center rounded-full ${T.icon}`}
+            aria-label="Descartar foto"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
       )}
 
@@ -317,14 +392,29 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && sendText()}
               onFocus={() => setAlertsOpen(false)}
-              placeholder="Mensagem"
+              placeholder={pendingPhoto ? "Legenda (opcional)" : "Mensagem"}
               className={`h-11 min-w-0 flex-1 bg-transparent px-1 text-[15px] outline-none ${T.inputText}`}
+            />
+            <button
+              onClick={() => photoInputRef.current?.click()}
+              disabled={photoBusy}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${T.icon} disabled:opacity-50`}
+              aria-label="Enviar foto ou selfie"
+            >
+              {photoBusy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Camera className="h-5 w-5" />}
+            </button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => onPickPhoto(e.target.files?.[0])}
             />
           </div>
         )}
 
         <button
-          onClick={recorder.recording ? recorder.send : hasText ? sendText : recorder.start}
+          onClick={recorder.recording ? recorder.send : pendingPhoto ? sendPhoto : hasText ? sendText : recorder.start}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-lime-400 text-zinc-950 transition active:scale-90"
           aria-label={recorder.recording || hasText ? "Enviar" : "Gravar áudio"}
         >
@@ -335,7 +425,9 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
   );
 }
 
-function MessageBubble({ m, showName, T, light }: { m: ChatMessage; showName: boolean; T: Theme; light: boolean }) {
+function MessageBubble({
+  m, showName, T, light, onOpenPhoto,
+}: { m: ChatMessage; showName: boolean; T: Theme; light: boolean; onOpenPhoto: (url: string) => void }) {
   if (m.kind === "alerta") {
     const meta = ALERT_META[m.alertType ?? "risco"];
     const Icon = ALERT_ICONS[m.alertType ?? "risco"];
@@ -373,10 +465,31 @@ function MessageBubble({ m, showName, T, light }: { m: ChatMessage; showName: bo
             )}
           </p>
         )}
-        {m.kind === "audio" ? (
+        {m.kind === "foto" ? (
+          <div className="pb-4">
+            {m.photoUrl ? (
+              <button onClick={() => onOpenPhoto(withToken(m.photoUrl!))} className="block" aria-label="Ver foto">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={withToken(m.photoUrl)}
+                  alt="Foto enviada no rádio"
+                  loading="lazy"
+                  className="max-h-72 w-60 max-w-full rounded-lg object-cover"
+                />
+              </button>
+            ) : (
+              <p className={`flex items-center gap-1.5 py-2 pr-10 text-[13px] italic ${T.meta}`}>
+                <ImageOff className="h-4 w-4" /> Foto expirou (fica 5 h)
+              </p>
+            )}
+            {m.content && (
+              <p className={`mt-1 pr-10 text-[14px] leading-snug break-words whitespace-pre-wrap ${T.msgText}`}>{m.content}</p>
+            )}
+          </div>
+        ) : m.kind === "audio" ? (
           <AudioBubble
             duration={m.audioDurationSec ?? 5}
-            url={m.audioUrl ? `${m.audioUrl}?t=${encodeURIComponent(getToken() ?? "")}` : undefined}
+            url={m.audioUrl ? withToken(m.audioUrl) : undefined}
             seedId={m.id}
             T={T}
           />
@@ -461,4 +574,34 @@ function blobToBase64(blob: Blob): Promise<string> {
     r.onerror = reject;
     r.readAsDataURL(blob);
   });
+}
+
+/** URL de mídia do rádio com a chave de sessão (img/audio não mandam cabeçalho) */
+function withToken(url: string) {
+  return `${url}?t=${encodeURIComponent(getToken() ?? "")}`;
+}
+
+/** Reduz a foto no celular: lado maior até `max` px, JPEG */
+async function shrinkImage(file: File, max: number, quality: number): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale);
+    const h = Math.round(img.naturalHeight * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas");
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", quality);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

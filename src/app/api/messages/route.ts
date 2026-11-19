@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { couriers, messageAudio, messages } from "@/db/schema";
+import { couriers, messageAudio, messagePhoto, messages } from "@/db/schema";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { haversineKm } from "@/lib/domain";
 import { purgeOldMessages, RETENTION_MS } from "@/lib/chat";
@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 const NEAR_KM = 15;
 /** Posição de GPS considerada atual */
 const LIVE_MS = 10 * 60 * 1000;
+/** Foto: já reduzida no celular (~1024 px JPEG) */
+const MAX_PHOTO_B64 = 700_000;
 /** Áudio: até ~60 s de voz comprimida */
 const MAX_AUDIO_B64 = 900_000;
 
@@ -51,6 +53,7 @@ export async function GET(req: Request) {
       senderNickname: couriers.nickname,
       senderPhoto: couriers.photoUrl,
       hasAudio: sql<number>`EXISTS (SELECT 1 FROM message_audio a WHERE a.message_id = ${messages.id})`,
+      hasPhoto: sql<number>`EXISTS (SELECT 1 FROM message_photo p WHERE p.message_id = ${messages.id})`,
     })
     .from(messages)
     .leftJoin(couriers, eq(messages.courierId, couriers.id));
@@ -88,6 +91,7 @@ export async function GET(req: Request) {
       senderNickname: m.senderNickname ?? "",
       senderPhoto: m.senderPhoto || null,
       audioUrl: m.hasAudio ? `/api/messages/audio/${m.id}` : null,
+      photoUrl: m.hasPhoto ? `/api/messages/photo/${m.id}` : null,
       distanceKm,
       isMe,
       createdAt: m.createdAt.toISOString(),
@@ -100,7 +104,7 @@ export async function POST(req: Request) {
   const me = await getSessionCourier(req);
   if (!me) return unauthorized();
   const body = await req.json().catch(() => ({}));
-  const kind = ["texto", "audio", "alerta"].includes(body.kind) ? body.kind : "texto";
+  const kind = ["texto", "audio", "alerta", "foto"].includes(body.kind) ? body.kind : "texto";
   const content = String(body.content ?? "").slice(0, 1000);
   if (kind === "texto" && !content.trim()) {
     return NextResponse.json({ error: "Mensagem vazia" }, { status: 400 });
@@ -114,6 +118,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Áudio inválido ou longo demais" }, { status: 400 });
     }
     audio = { mime, dataB64: body.audioB64 };
+  }
+
+  // Foto: JPEG/WebP em base64, já reduzida pelo app
+  let photo: { mime: string; dataB64: string } | null = null;
+  if (kind === "foto") {
+    const mime = String(body.photoMime ?? "image/jpeg");
+    const data = typeof body.photoB64 === "string" ? body.photoB64 : "";
+    if (!/^image\/(jpeg|webp|png)$/.test(mime) || !data || data.length > MAX_PHOTO_B64) {
+      return NextResponse.json({ error: "Foto inválida ou grande demais" }, { status: 400 });
+    }
+    photo = { mime, dataB64: data };
   }
 
   const pos = positionOf(me);
@@ -135,9 +150,12 @@ export async function POST(req: Request) {
   if (audio) {
     await db.insert(messageAudio).values({ messageId: created.id, mime: audio.mime, dataB64: audio.dataB64 });
   }
+  if (photo) {
+    await db.insert(messagePhoto).values({ messageId: created.id, mime: photo.mime, dataB64: photo.dataB64 });
+  }
 
   // Limpeza oportunista (o Cron também limpa a cada 30 min)
-  if (Math.random() < 0.05) await purgeOldMessages().catch(() => null);
+  if (Math.random() < 0.1) await purgeOldMessages().catch(() => null);
 
   return NextResponse.json({
     message: {
@@ -153,6 +171,7 @@ export async function POST(req: Request) {
       senderNickname: me.nickname,
       senderPhoto: me.photoUrl || null,
       audioUrl: audio ? `/api/messages/audio/${created.id}` : null,
+      photoUrl: photo ? `/api/messages/photo/${created.id}` : null,
       distanceKm: null,
       isMe: true,
       createdAt: created.createdAt.toISOString(),

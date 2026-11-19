@@ -6,7 +6,7 @@ import {
   Package, Phone, Plus, Save, Store as StoreIcon, Trash2, User,
 } from "lucide-react";
 import PointPicker from "./PointPicker";
-import { InstallButton } from "./InstallApp";
+import { InstallBanner, InstallButton } from "./InstallApp";
 import { apiFetch } from "@/lib/session";
 import { fmtBRL, fmtKm } from "@/lib/format";
 import { haversineKm } from "@/lib/domain";
@@ -79,6 +79,9 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
             <p className="truncate text-[16px] leading-tight font-bold text-white">{store.name || "Minha loja"}</p>
             <p className="truncate text-[12px] text-amber-300">Painel do lojista</p>
           </div>
+          <div className="hidden sm:block">
+            <InstallButton className="h-11 px-4 text-xs" label="Instalar app" />
+          </div>
           <button onClick={onLogout} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-zinc-300" aria-label="Sair">
             <LogOut className="h-5 w-5" />
           </button>
@@ -104,7 +107,9 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
         )}
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-5">
+      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
+        {/* Convite para instalar o app (celular ou computador da loja) */}
+        <InstallBanner />
         {tab === "loja" && (
           <StoreProfile
             store={store}

@@ -22,7 +22,7 @@
       "migrations_dir": "drizzle"
     }
   ],
-  // Simulação de corrida para testar notificações (a cada 30 min). Remover quando houver pedidos reais.
+  // Manutenção a cada 30 min (limpeza do rádio: mensagens 24 h, fotos 2 h)
   "triggers": {
     "crons": ["*/30 * * * *"]
   },

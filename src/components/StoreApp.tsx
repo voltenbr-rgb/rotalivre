@@ -280,7 +280,9 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
   const [f, setF] = useState({ clientName: "", clientPhone: "", deliveryAddress: "", deliveryNeighborhood: "", notes: "", itemsCount: 1 });
   const [dest, setDest] = useState<{ lat: number; lng: number } | null>(null);
   const [payment, setPayment] = useState("Pix");
-  const [vehicles, setVehicles] = useState<string[]>(VEHICLES.map((v) => v.id));
+  // Padrão: qualquer veículo. Desligando, a loja marca quais aceita.
+  const [anyVehicle, setAnyVehicle] = useState(true);
+  const [vehicles, setVehicles] = useState<string[]>([]);
   const [value, setValue] = useState("");
   const [valueTouched, setValueTouched] = useState(false);
   const [sending, setSending] = useState(false);
@@ -297,7 +299,7 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
   }, [suggested, valueTouched]);
 
   const toggleVehicle = (id: string) =>
-    setVehicles((v) => (v.includes(id) ? (v.length > 1 ? v.filter((x) => x !== id) : v) : [...v, id]));
+    setVehicles((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
 
   const submit = async () => {
     const valueNet = parseFloat(value.replace(",", "."));
@@ -305,12 +307,20 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
     if (!f.deliveryAddress.trim()) return notify("Informe o endereço de entrega", "warn");
     if (!dest) return notify("Toque no mapa para marcar o ponto de entrega", "warn");
     if (!Number.isFinite(valueNet)) return notify("Informe o valor da entrega", "warn");
+    if (!anyVehicle && vehicles.length === 0) return notify("Marque pelo menos um veículo, ou ligue “Qualquer veículo”", "warn");
     setSending(true);
     try {
       const res = await apiFetch("/api/store/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...f, deliveryLat: dest.lat, deliveryLng: dest.lng, valueNet, paymentMethod: payment, acceptedVehicles: vehicles }),
+        body: JSON.stringify({
+          ...f,
+          deliveryLat: dest.lat,
+          deliveryLng: dest.lng,
+          valueNet,
+          paymentMethod: payment,
+          acceptedVehicles: anyVehicle ? [] : vehicles, // [] = todos
+        }),
       });
       const data = await res.json();
       if (!res.ok) return notify(data.error ?? "Não foi possível lançar", "warn");
@@ -390,21 +400,50 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-bold tracking-wide text-zinc-400 uppercase">Quais veículos podem pegar?</p>
-        <div className="grid grid-cols-4 gap-2">
-          {VEHICLES.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => toggleVehicle(v.id)}
-              className={`flex flex-col items-center gap-1 rounded-2xl border py-2.5 text-[11px] font-bold ${
-                vehicles.includes(v.id) ? "border-lime-400 bg-lime-400/12 text-lime-300" : "border-white/10 bg-white/4 text-zinc-500"
-              }`}
-            >
-              <span className="text-xl leading-none">{v.emoji}</span>
-              {v.label}
-            </button>
-          ))}
-        </div>
+        <p className="mb-2 text-xs font-bold tracking-wide text-zinc-400 uppercase">Quem pode pegar este pedido?</p>
+        <button
+          onClick={() => setAnyVehicle((v) => !v)}
+          className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left ${
+            anyVehicle ? "border-lime-400 bg-lime-400/12" : "border-white/10 bg-white/4"
+          }`}
+        >
+          <span>
+            <span className={`block text-[14px] font-extrabold ${anyVehicle ? "text-lime-300" : "text-zinc-300"}`}>Qualquer veículo</span>
+            <span className="block text-[11px] text-zinc-500">Moto, bicicleta, patinete ou carro</span>
+          </span>
+          <span className={`flex h-6 w-11 items-center rounded-full p-0.5 transition ${anyVehicle ? "bg-lime-400" : "bg-white/15"}`}>
+            <span className={`h-5 w-5 rounded-full bg-white shadow transition ${anyVehicle ? "translate-x-5" : ""}`} />
+          </span>
+        </button>
+
+        {!anyVehicle && (
+          <div className="slide-up mt-2">
+            <p className="mb-2 text-[12px] text-zinc-400">Toque para <b className="text-white">marcar</b> os veículos aceitos:</p>
+            <div className="grid grid-cols-4 gap-2">
+              {VEHICLES.map((v) => {
+                const on = vehicles.includes(v.id);
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => toggleVehicle(v.id)}
+                    className={`relative flex flex-col items-center gap-1 rounded-2xl border py-2.5 text-[11px] font-bold ${
+                      on ? "border-lime-400 bg-lime-400/12 text-lime-300" : "border-white/10 bg-white/4 text-zinc-500"
+                    }`}
+                  >
+                    {on && <CircleCheck className="absolute top-1 right-1 h-3.5 w-3.5 text-lime-400" />}
+                    <span className="text-xl leading-none">{v.emoji}</span>
+                    {v.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className={`mt-2 text-[12px] ${vehicles.length ? "text-zinc-400" : "text-amber-300"}`}>
+              {vehicles.length
+                ? `Só entregadores de ${vehicles.map((id) => vehicleLabel(id).toLowerCase()).join(", ")} vão ver este pedido.`
+                : "Nenhum veículo marcado ainda."}
+            </p>
+          </div>
+        )}
       </div>
 
       <Field label="Observação para o entregador (opcional)">
@@ -466,6 +505,12 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
               <span className={`rounded-full border px-2.5 py-1 font-bold ${st.cls}`}>{st.label}</span>
               <span className="flex items-center gap-1 text-zinc-500">
                 <Clock className="h-3 w-3" /> {time} • {fmtKm(o.distanceKm)}
+              </span>
+              <span className="text-zinc-500">
+                •{" "}
+                {!o.acceptedVehicles || o.acceptedVehicles === "todos"
+                  ? "qualquer veículo"
+                  : o.acceptedVehicles.split(",").map((v) => vehicleLabel(v).toLowerCase()).join(", ")}
               </span>
             </div>
 

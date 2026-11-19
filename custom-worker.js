@@ -7,7 +7,7 @@ export default {
 
   /**
    * Cron Trigger (wrangler.jsonc → triggers.crons): a cada 30 min chama a rota
-   * de simulação de corrida, que cria um pedido de teste e envia o push.
+   * de manutenção (limpeza do rádio).
    */
   async scheduled(_controller, env, ctx) {
     const row = await env.DB.prepare("SELECT value FROM app_config WHERE key = 'cron_token'").first();
@@ -18,7 +18,7 @@ export default {
     });
     ctx.waitUntil(
       handler.fetch(req, env, ctx).then(async (res) => {
-        console.log("cron simulate:", res.status, await res.text());
+        console.log("cron manutenção:", res.status, await res.text());
       }),
     );
   },

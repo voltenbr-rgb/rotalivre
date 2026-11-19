@@ -3,9 +3,7 @@ import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
-import { generateOrder, haversineKm } from "@/lib/domain";
-import { fmtBRL, fmtKm } from "@/lib/format";
-import { inBackground, notifyCouriersNear } from "@/lib/push";
+import { haversineKm } from "@/lib/domain";
 
 /** Raio do feed: só aparecem coletas até esta distância do entregador */
 const FEED_RADIUS_KM = 25;
@@ -15,9 +13,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Feed aberto em tempo real:
- * - pedidos parados há +30min expiram
- * - PROVISÓRIO: enquanto não há lançamento de pedidos, pedidos de teste são
- *   gerados ao redor do entregador para testar o feed e o mapa
+ * - pedidos parados há +3 h expiram
+ * - mostra só pedidos reais, lançados pelas lojas cadastradas
  */
 export async function GET(req: Request) {
   const now = Date.now();
@@ -44,6 +41,8 @@ export async function GET(req: Request) {
     !o.acceptedVehicles || o.acceptedVehicles === "todos" || o.acceptedVehicles.split(",").includes(myVehicle);
 
   for (const o of available) {
+    // Só pedidos lançados por lojas cadastradas (os fictícios de teste foram desligados)
+    if (!o.storeId) continue;
     const ageMin = (now - o.createdAt.getTime()) / 60000;
     // Pedido de teste expira em 30 min; pedido de loja real, em 3 h
     if (ageMin > (o.storeId ? 180 : 30)) {
@@ -58,32 +57,7 @@ export async function GET(req: Request) {
   fresh.length = 0;
   fresh.push(...nearby);
 
-  const created: (typeof available)[number][] = [];
-  // Novos pedidos chegando na praça — a praça nunca fica vazia
-  while (fresh.length < 6) {
-    const [row] = await db.insert(orders).values(generateOrder(center)).returning();
-    fresh.unshift(row);
-    created.push(row);
-  }
-  if (fresh.length < 9 && Math.random() < 0.5) {
-    const [row] = await db.insert(orders).values(generateOrder(center)).returning();
-    fresh.unshift(row);
-    created.push(row);
-  }
   await Promise.all(updates);
-
-  // Notificação push da corrida nova para quem está perto da loja (5 km)
-  const newest = created[created.length - 1];
-  if (newest) {
-    inBackground(
-      notifyCouriersNear(newest.pickupLat, newest.pickupLng, 5, {
-        title: `Nova corrida • ${fmtBRL(newest.valueNet)}`,
-        body: `${newest.establishment} (${newest.pickupNeighborhood}) → ${newest.deliveryNeighborhood} • ${fmtKm(newest.distanceKm)}`,
-        url: "/",
-        tag: "corrida",
-      }),
-    );
-  }
 
   // Pedidos de lojas reais primeiro
   fresh.sort((a, b) => Number(!!b.storeId) - Number(!!a.storeId));

@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { appConfig, orders } from "@/db/schema";
-import { CORUMBA_CENTER, generateOrder } from "@/lib/domain";
-import { fmtBRL, fmtKm } from "@/lib/format";
-import { notifyCouriersNear } from "@/lib/push";
+import { appConfig } from "@/db/schema";
 import { purgeOldMessages } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
 
 /**
- * SIMULAÇÃO (teste de notificação): chamado pelo Cron Trigger da Cloudflare
- * a cada 30 min. Cria um pedido de teste em Corumbá/Ladário e avisa quem
- * está com o sino ligado e Online na região.
+ * Manutenção automática, chamada pelo Cron Trigger da Cloudflare a cada 30 min.
+ * (A simulação de corridas fictícias foi desligada: agora só há pedidos de lojas.)
+ * - Rádio: apaga mensagens com +24 h e fotos com +2 h
  * Protegido por um token guardado no D1 (app_config.cron_token).
  */
 export async function POST(req: Request) {
@@ -21,17 +18,6 @@ export async function POST(req: Request) {
   if (!row[0] || token !== row[0].value) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
-
-  // Manutenção: rádio guarda só 24 h
-  await purgeOldMessages().catch((e) => console.error("purge:", e));
-
-  const [order] = await db.insert(orders).values(generateOrder(CORUMBA_CENTER)).returning();
-  const sent = await notifyCouriersNear(order.pickupLat, order.pickupLng, 30, {
-    title: `🛵 ${order.establishment} pede entregador`,
-    body: `${order.pickupNeighborhood} → ${order.deliveryNeighborhood} • ${fmtBRL(order.valueNet)} • ${fmtKm(order.distanceKm)}`,
-    url: "/",
-    tag: "corrida",
-  });
-
-  return NextResponse.json({ ok: true, order: order.code, notified: sent });
+  await purgeOldMessages();
+  return NextResponse.json({ ok: true });
 }

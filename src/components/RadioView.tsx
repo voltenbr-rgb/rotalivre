@@ -115,6 +115,8 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
   const [viewer, setViewer] = useState<string | null>(null);
   // Mensagem minha selecionada (mostra "Apagar para todos")
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Confirmação de "Excluir foto?" (X no canto da foto)
+  const [confirmPhotoId, setConfirmPhotoId] = useState<number | null>(null);
 
   const deleteMessage = async (id: number) => {
     setSelectedId(null);
@@ -332,6 +334,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
             selected={selectedId === m.id}
             onSelect={() => m.isMe && setSelectedId((cur) => (cur === m.id ? null : m.id))}
             onDelete={() => deleteMessage(m.id)}
+            onAskDeletePhoto={() => setConfirmPhotoId(m.id)}
           />
         ))}
         {messages.length === 0 && (
@@ -340,6 +343,39 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
           </p>
         )}
       </div>
+
+      {/* Confirmação: excluir foto */}
+      {confirmPhotoId !== null && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 p-6" onClick={() => setConfirmPhotoId(null)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`slide-up w-full max-w-[300px] rounded-2xl p-5 shadow-2xl ${light ? "bg-white" : "bg-[#1f2c34]"}`}
+          >
+            <p className={`text-base font-extrabold ${light ? "text-zinc-900" : "text-white"}`}>Excluir foto?</p>
+            <p className={`mt-1 text-[13px] leading-snug ${light ? "text-zinc-600" : "text-zinc-300"}`}>
+              A foto some para todos do rádio e é apagada do sistema.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmPhotoId(null)}
+                className={`rounded-xl px-4 py-2 text-sm font-bold ${light ? "text-zinc-600" : "text-zinc-300"}`}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const id = confirmPhotoId;
+                  setConfirmPhotoId(null);
+                  deleteMessage(id);
+                }}
+                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white active:scale-95"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Foto em tela cheia */}
       {viewer && (
@@ -477,7 +513,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
 }
 
 function MessageBubble({
-  m, showName, T, light, onOpenPhoto, selected, onSelect, onDelete,
+  m, showName, T, light, onOpenPhoto, selected, onSelect, onDelete, onAskDeletePhoto,
 }: {
   m: ChatMessage;
   showName: boolean;
@@ -487,6 +523,7 @@ function MessageBubble({
   selected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onAskDeletePhoto: () => void;
 }) {
   const deleteBar = m.isMe && selected && (
     <button
@@ -544,6 +581,7 @@ function MessageBubble({
         {m.kind === "foto" ? (
           <div className="pb-4">
             {m.photoUrl ? (
+              <div className="relative">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -560,6 +598,19 @@ function MessageBubble({
                   className="max-h-72 w-60 max-w-full rounded-lg object-cover"
                 />
               </button>
+              {m.isMe && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAskDeletePhoto();
+                  }}
+                  className="absolute top-1.5 right-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm active:scale-90"
+                  aria-label="Excluir foto"
+                >
+                  <X className="h-4.5 w-4.5" />
+                </button>
+              )}
+              </div>
             ) : (
               <p className={`flex items-center gap-1.5 py-2 pr-10 text-[13px] italic ${T.meta}`}>
                 <ImageOff className="h-4 w-4" /> Foto expirou (fica 2 h)

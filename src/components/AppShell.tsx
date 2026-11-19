@@ -231,8 +231,8 @@ export default function AppShell() {
       <div className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-[#05070a] shadow-[0_0_80px_rgba(0,0,0,0.9)] md:border-x md:border-white/6 lg:mx-0 lg:ml-64 lg:max-w-none lg:border-none lg:shadow-none"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        {/* No mapa o cabeçalho some: a tela fica toda para o mapa */}
-        {tab !== "mapa" && (
+        {/* No mapa e no rádio o cabeçalho some: a tela fica para o conteúdo */}
+        {tab !== "mapa" && tab !== "radio" && (
           <Header
             courier={courier}
             todayNet={dashboard?.todayNet ?? 0}
@@ -255,8 +255,8 @@ export default function AppShell() {
             </div>
           )}
           {tab === "radio" && (
-            <div className="h-full pb-[68px] lg:pb-0">
-              <RadioView courier={courier} notify={notify} />
+            <div className="absolute inset-0 pb-[68px] lg:pb-0">
+              <RadioView courier={courier} notify={notify} onStatusChange={handleStatusChange} />
             </div>
           )}
           {tab === "relatorios" && (

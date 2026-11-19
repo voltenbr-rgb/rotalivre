@@ -3,14 +3,14 @@
 import { useState } from "react";
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Bike, CalendarDays, Check, CreditCard,
-  Eye, Home, IdCard, LoaderCircle, LogIn, Mail, MapPin, Phone, Radio,
+  Eye, EyeOff, Home, IdCard, LoaderCircle, Lock, LogIn, Mail, MapPin, Phone, Radio,
   Route, ShieldCheck, User, UserPlus, Wallet,
 } from "lucide-react";
 import type { Courier } from "@/lib/types";
 import { InstallButton } from "./InstallApp";
 
 interface Props {
-  onAuthenticated: (courier: Courier) => void;
+  onAuthenticated: (courier: Courier, token: string) => void;
 }
 
 const inputCls =
@@ -26,11 +26,15 @@ export default function AuthScreen({ onAuthenticated }: Props) {
 
   // login
   const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
 
   // cadastro (wizard)
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
-    name: "", nickname: "", email: "", phone: "", cpf: "", birthDate: "", photoUrl: "",
+    name: "", nickname: "", email: "", phone: "", cpf: "", birthDate: "",
     vehicleModel: "", vehiclePlate: "", vehicleYear: "", vehicleColor: "",
     cnhNumber: "", cnhCategory: "AB", cnhExpiry: "",
     cep: "", street: "", number: "", neighborhood: "", city: "", state: "",
@@ -59,7 +63,7 @@ export default function AuthScreen({ onAuthenticated }: Props) {
         setServerError(data.error ?? "Algo deu errado. Tente de novo.");
         return null;
       }
-      return data.courier as Courier;
+      return { courier: data.courier as Courier, token: data.token as string };
     } catch {
       setServerError("Falha de conexão. Verifique sua internet.");
       return null;
@@ -69,8 +73,8 @@ export default function AuthScreen({ onAuthenticated }: Props) {
   };
 
   const doLogin = async () => {
-    const c = await call({ action: "login", email: loginEmail });
-    if (c) onAuthenticated(c);
+    const r = await call({ action: "login", email: loginEmail, password: loginPassword });
+    if (r) onAuthenticated(r.courier, r.token);
   };
 
   const lookupCep = async (raw: string) => {
@@ -110,6 +114,8 @@ export default function AuthScreen({ onAuthenticated }: Props) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = "E-mail inválido";
       if (form.phone.replace(/\D/g, "").length < 10) e.phone = "Celular com DDD";
       if (form.cpf.replace(/\D/g, "").length !== 11) e.cpf = "CPF com 11 dígitos";
+      if (password.length < 6) e.password = "Mínimo de 6 caracteres";
+      else if (password !== password2) e.password2 = "As senhas não são iguais";
     }
     if (step === 1) {
       if (form.vehicleModel.trim().length < 3) e.vehicleModel = "Informe o modelo da moto";
@@ -130,8 +136,8 @@ export default function AuthScreen({ onAuthenticated }: Props) {
 
   const submitRegister = async () => {
     if (!validateStep()) return;
-    const c = await call({ action: "register", ...form });
-    if (c) onAuthenticated(c);
+    const r = await call({ action: "register", ...form, password });
+    if (r) onAuthenticated(r.courier, r.token);
   };
 
   return (
@@ -219,18 +225,42 @@ export default function AuthScreen({ onAuthenticated }: Props) {
             <div className="slide-up">
               <Back onClick={() => setView("home")} />
               <h2 className="font-display text-2xl font-black text-white">Entrar na minha conta</h2>
-              <p className="mt-1 text-sm text-zinc-400">Use o e-mail do seu cadastro de associado.</p>
+              <p className="mt-1 text-sm text-zinc-400">Use o e-mail e a senha do seu cadastro.</p>
               <div className="mt-5 space-y-3.5">
                 <Field label="E-mail cadastrado" icon={<Mail className="h-3.5 w-3.5" />}>
                   <input
                     className={inputCls}
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && doLogin()}
                     placeholder="voce@email.com"
                     inputMode="email"
+                    autoComplete="email"
                   />
                 </Field>
+                <Field label="Senha" icon={<Lock className="h-3.5 w-3.5" />}>
+                  <div className="relative">
+                    <input
+                      className={`${inputCls} pr-11`}
+                      type={showPw ? "text" : "password"}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && doLogin()}
+                      placeholder="Sua senha"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw((v) => !v)}
+                      className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-500"
+                      aria-label={showPw ? "Esconder senha" : "Mostrar senha"}
+                    >
+                      {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </Field>
+                <p className="text-[11px] leading-snug text-zinc-500">
+                  Já tinha cadastro antes das senhas? Digite uma senha nova: ela passa a ser a sua.
+                </p>
                 <ErrorBox msg={serverError} />
                 <button
                   onClick={doLogin}
@@ -297,9 +327,29 @@ export default function AuthScreen({ onAuthenticated }: Props) {
                         <input className={`${inputCls} ${errors.cpf ? errCls : ""}`} value={form.cpf} onChange={(e) => set("cpf", e.target.value)} placeholder="000.000.000-00" inputMode="numeric" />
                       </Field>
                     </div>
-                    <Field label="URL da foto (opcional)">
-                      <input className={inputCls} value={form.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="https://…" />
-                    </Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Crie uma senha" icon={<Lock className="h-3.5 w-3.5" />} error={errors.password}>
+                        <input
+                          className={`${inputCls} ${errors.password ? errCls : ""}`}
+                          type="password"
+                          value={password}
+                          onChange={(e) => { setPassword(e.target.value); setErrors((x) => ({ ...x, password: "" })); }}
+                          placeholder="mín. 6 caracteres"
+                          autoComplete="new-password"
+                        />
+                      </Field>
+                      <Field label="Repita a senha" error={errors.password2}>
+                        <input
+                          className={`${inputCls} ${errors.password2 ? errCls : ""}`}
+                          type="password"
+                          value={password2}
+                          onChange={(e) => { setPassword2(e.target.value); setErrors((x) => ({ ...x, password2: "" })); }}
+                          placeholder="de novo"
+                          autoComplete="new-password"
+                        />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">A foto de perfil você coloca depois, na aba Perfil.</p>
                   </>
                 )}
 

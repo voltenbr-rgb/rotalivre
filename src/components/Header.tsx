@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, BellOff, BellRing, ChevronDown, Star, Check } from "lucide-react";
+import { Bell, BellOff, BellRing, ChevronDown, Check } from "lucide-react";
 import { usePush } from "@/lib/usePush";
 import type { Courier, CourierStatus } from "@/lib/types";
 import { fmtBRL, STATUS_LABEL, initialsOf } from "@/lib/format";
@@ -57,20 +57,16 @@ export default function Header({ courier, todayNet, onStatusChange, onOpenProfil
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] leading-tight font-bold text-white">
-            {courier.name.split(" ")[0]}{" "}
-            <span className="text-lime-300">“{courier.nickname}”</span>{" "}
-            {courier.name.split(" ").slice(1).join(" ")}
+          {/* Só o essencial: nome e apelido */}
+          <p className="truncate text-[16px] leading-tight font-bold text-white capitalize">
+            {(() => {
+              const parts = courier.name.trim().split(/\s+/);
+              return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : parts[0];
+            })()}
           </p>
-          <div className="mt-0.5 flex items-center gap-2">
-            <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-300">
-              <Star className="h-3 w-3 fill-amber-300" /> {courier.rating.toFixed(1)}
-            </span>
-            <span className="text-[11px] text-zinc-500">•</span>
-            <span className="truncate text-[11px] text-zinc-400">
-              {courier.vehicleModel} • {courier.vehiclePlate}
-            </span>
-          </div>
+          {courier.nickname && (
+            <p className="mt-0.5 truncate text-[13px] font-semibold text-lime-300">“{courier.nickname}”</p>
+          )}
         </div>
 
         <div ref={bellRef} className="relative">

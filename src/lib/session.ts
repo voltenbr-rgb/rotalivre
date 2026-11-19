@@ -1,26 +1,30 @@
-/* Sessão do associado (multiusuário): o id do entregador logado fica no
-   navegador e é enviado em todas as chamadas de API. */
+/* Sessão do associado: cada login recebe uma chave de acesso própria
+   (gerada pelo servidor), guardada só neste aparelho e enviada em todas
+   as chamadas de API. */
 
-const KEY = "rl_courier_id";
+const KEY = "rl_session_token";
+const LEGACY_KEY = "rl_courier_id";
 const INSTALL_DISMISSED = "rl_install_dismissed";
 
-export function getSessionId(): string | null {
+export function getToken(): string | null {
   try {
+    localStorage.removeItem(LEGACY_KEY); // formato antigo (inseguro), descartado
     return localStorage.getItem(KEY);
   } catch {
     return null;
   }
 }
 
-export function setSessionId(id: number) {
+export function setToken(token: string) {
   try {
-    localStorage.setItem(KEY, String(id));
+    localStorage.setItem(KEY, token);
   } catch { /* armazenamento indisponível */ }
 }
 
 export function clearSession() {
   try {
     localStorage.removeItem(KEY);
+    localStorage.removeItem(LEGACY_KEY);
   } catch { /* ignore */ }
 }
 
@@ -38,10 +42,10 @@ export function dismissInstall() {
   } catch { /* ignore */ }
 }
 
-/** fetch com header de sessão do associado */
+/** fetch com a chave de sessão do associado */
 export async function apiFetch(input: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  const id = getSessionId();
-  if (id) headers.set("x-courier-id", id);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   return fetch(input, { ...init, headers });
 }

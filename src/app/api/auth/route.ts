@@ -3,17 +3,25 @@ import { db } from "@/db";
 import { couriers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { MAIN_BASE } from "@/lib/domain";
+import { createSession, deleteSession, publicCourier } from "@/lib/auth";
+import { hashPassword, validatePassword, verifyPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Acesso multiusuário:
- * - action "login": entra com o e-mail cadastrado
- * - action "register": cadastro completo de novo associado
+ * Acesso multiusuário (cada login recebe uma chave de sessão própria):
+ * - action "login": e-mail + senha. Conta antiga sem senha cria a senha no 1º acesso.
+ * - action "register": cadastro completo de novo associado, com senha
+ * - action "logout": invalida a chave deste aparelho
  */
 export async function POST(req: Request) {
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
   const action = body.action as string;
+
+  if (action === "logout") {
+    await deleteSession(req);
+    return NextResponse.json({ ok: true });
+  }
 
   if (action === "login") {
     const email = String(body.email ?? "").trim().toLowerCase();
@@ -25,7 +33,20 @@ export async function POST(req: Request) {
         { status: 404 },
       );
     }
-    return NextResponse.json({ courier: rows[0] });
+    const user = rows[0];
+    const password = String(body.password ?? "");
+    if (!user.passwordHash) {
+      // Primeiro acesso de conta criada antes das senhas: define a senha agora
+      const err = validatePassword(password);
+      if (err) {
+        return NextResponse.json({ error: `Primeiro acesso: crie uma senha. ${err}.`, needsPassword: true }, { status: 400 });
+      }
+      await db.update(couriers).set({ passwordHash: await hashPassword(password) }).where(eq(couriers.id, user.id));
+    } else if (!(await verifyPassword(password, user.passwordHash))) {
+      return NextResponse.json({ error: "Senha incorreta" }, { status: 401 });
+    }
+    const token = await createSession(user.id);
+    return NextResponse.json({ courier: publicCourier(user), token });
   }
 
   if (action === "register") {
@@ -39,6 +60,9 @@ export async function POST(req: Request) {
     if (!(/^[A-Z]{3}\d{4}$/.test(plate) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(plate))) {
       return NextResponse.json({ error: "Placa inválida (use AAA0000 ou AAA0A00)" }, { status: 400 });
     }
+    const password = String(body.password ?? "");
+    const pwErr = validatePassword(password);
+    if (pwErr) return NextResponse.json({ error: pwErr }, { status: 400 });
     const existing = await db.select().from(couriers).where(sql`lower(${couriers.email}) = lower(${email})`).limit(1);
     if (existing[0]) {
       return NextResponse.json(
@@ -57,7 +81,8 @@ export async function POST(req: Request) {
         phone: String(body.phone ?? ""),
         cpf: String(body.cpf ?? ""),
         birthDate: String(body.birthDate ?? ""),
-        photoUrl: String(body.photoUrl ?? ""),
+        photoUrl: "",
+        passwordHash: await hashPassword(password),
         status: "online",
         vehicleModel: String(body.vehicleModel ?? ""),
         vehiclePlate: plate,
@@ -81,7 +106,8 @@ export async function POST(req: Request) {
       })
       .returning();
 
-    return NextResponse.json({ courier: created });
+    const token = await createSession(created.id);
+    return NextResponse.json({ courier: publicCourier(created), token });
   }
 
   return NextResponse.json({ error: "Ação inválida" }, { status: 400 });

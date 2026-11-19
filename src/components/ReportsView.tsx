@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { ReportData } from "@/lib/types";
 import { fmtBRL, fmtKm, fmtNum } from "@/lib/format";
-import { apiFetch, getSessionId } from "@/lib/session";
+import { apiFetch, getToken } from "@/lib/session";
 
 const PERIODS = [
   { v: 1, label: "Hoje" },
@@ -257,7 +257,7 @@ export default function ReportsView({ notify }: Props) {
           {/* Exportação */}
           <section className="grid grid-cols-2 gap-2.5 pb-2">
             <a
-              href={`/api/reports/export?period=${period}&cid=${getSessionId() ?? ""}`}
+              href={`/api/reports/export?period=${period}&t=${encodeURIComponent(getToken() ?? "")}`}
               className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/5 text-sm font-extrabold text-white transition active:scale-95"
             >
               <Download className="h-5 w-5 text-lime-400" /> Exportar CSV

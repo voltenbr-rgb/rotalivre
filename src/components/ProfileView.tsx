@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  BadgeCheck, Bike, CalendarDays, CreditCard, House, IdCard, LoaderCircle,
+  BadgeCheck, Bike, Camera, CalendarDays, CreditCard, House, IdCard, LoaderCircle,
   LogOut, Mail, MapPin, Phone, Save, Settings2, Star, User,
 } from "lucide-react";
 import type { Courier } from "@/lib/types";
@@ -27,6 +27,36 @@ export default function ProfileView({ courier, onSaved, onLogout, notify }: Prop
   const [saving, setSaving] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [cepOk, setCepOk] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  /** Reduz a foto no próprio celular (quadrado 320 px, JPEG) e salva no banco */
+  const onPickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      notify("Escolha uma imagem (foto)", "warn");
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      const dataUrl = await squareJpeg(file, 320, 0.82);
+      const res = await apiFetch("/api/courier", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoUrl: dataUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setForm((f) => ({ ...f, photoUrl: data.courier.photoUrl }));
+      onSaved(data.courier);
+      notify("Foto de perfil atualizada!");
+    } catch {
+      notify("Não foi possível salvar a foto. Tente outra imagem.", "warn");
+    } finally {
+      setPhotoBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   const set = (k: keyof Courier, v: string | number) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -97,6 +127,10 @@ export default function ProfileView({ courier, onSaved, onLogout, notify }: Prop
         body: JSON.stringify({ ...form, vehiclePlate: form.vehiclePlate.toUpperCase() }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        notify(data.error ?? "Falha ao salvar. Tente de novo.", "warn");
+        return;
+      }
       onSaved(data.courier);
       notify("Perfil atualizado! Seus dados estão seguros.");
       if (navigator.vibrate) navigator.vibrate(40);
@@ -111,14 +145,32 @@ export default function ProfileView({ courier, onSaved, onLogout, notify }: Prop
     <div className="mx-auto w-full max-w-[520px] space-y-5 px-4 pt-4 pb-2 lg:max-w-4xl lg:px-6">
       {/* Cartão de identidade */}
       <section className="flex items-center gap-4 rounded-3xl border border-white/8 bg-[#101319] p-4">
-        {form.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={form.photoUrl} alt={form.name} className="h-20 w-20 shrink-0 rounded-3xl object-cover ring-2 ring-lime-400/60" />
-        ) : (
-          <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-lime-500 font-display text-2xl font-black text-zinc-950 ring-2 ring-lime-400/60">
-            {initialsOf(form.name || "?")}
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={photoBusy}
+          className="relative shrink-0"
+          aria-label="Trocar foto de perfil"
+        >
+          {form.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={form.photoUrl} alt={form.name} className="h-20 w-20 rounded-3xl object-cover ring-2 ring-lime-400/60" />
+          ) : (
+            <span className="flex h-20 w-20 items-center justify-center rounded-3xl bg-lime-500 font-display text-2xl font-black text-zinc-950 ring-2 ring-lime-400/60">
+              {initialsOf(form.name || "?")}
+            </span>
+          )}
+          <span className="absolute -right-1.5 -bottom-1.5 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#101319] bg-lime-400 text-zinc-950">
+            {photoBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
           </span>
-        )}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => onPickPhoto(e.target.files?.[0])}
+        />
         <div className="min-w-0">
           <p className="truncate font-display text-lg leading-tight font-extrabold text-white">
             {form.name.split(" ")[0]} “{form.nickname}”
@@ -135,9 +187,7 @@ export default function ProfileView({ courier, onSaved, onLogout, notify }: Prop
         </div>
       </section>
 
-      <Field label="URL da foto de perfil" icon={<User className="h-3.5 w-3.5" />}>
-        <input className={inputCls} value={form.photoUrl} onChange={(e) => set("photoUrl", e.target.value)} placeholder="https://…" />
-      </Field>
+      <p className="-mt-2 text-center text-[11px] text-zinc-500">Toque na foto para trocar (câmera ou galeria)</p>
 
       {/* Dados pessoais */}
       <Section icon={<User className="h-4 w-4 text-lime-400" />} title="Dados pessoais">
@@ -342,4 +392,29 @@ function Field({
       ) : null}
     </div>
   );
+}
+
+/** Corta a imagem no centro em quadrado e reduz para `size` px (JPEG) */
+async function squareJpeg(file: File, size: number, quality: number): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const sx = (img.naturalWidth - side) / 2;
+    const sy = (img.naturalHeight - side) / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas");
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+    return canvas.toDataURL("image/jpeg", quality);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutDashboard, LogOut, Map as MapIcon, Radio, User, Wallet } from "lucide-react";
 import type { Courier, CourierStatus, DashboardData, Order } from "@/lib/types";
 import { fmtBRL, initialsOf } from "@/lib/format";
-import { apiFetch, clearSession, getSessionId, setSessionId } from "@/lib/session";
+import { apiFetch, clearSession, getToken, setToken } from "@/lib/session";
 import Header from "./Header";
 import HomeView from "./HomeView";
 import MapView from "./MapView";
@@ -68,7 +68,7 @@ export default function AppShell() {
       navigator.serviceWorker.register("/sw.js").catch(() => null);
     }
     (async () => {
-      if (getSessionId()) {
+      if (getToken()) {
         const c = await loadCourier().catch(() => undefined);
         if (c) {
           await loadDashboard();
@@ -87,8 +87,8 @@ export default function AppShell() {
     return () => clearInterval(t);
   }, [screen, loadDashboard]);
 
-  const handleAuthenticated = async (c: Courier) => {
-    setSessionId(c.id);
+  const handleAuthenticated = async (c: Courier, token: string) => {
+    setToken(token);
     setCourier(c);
     setTab("inicio");
     setScreen("app");
@@ -97,7 +97,13 @@ export default function AppShell() {
   };
 
   const handleLogout = () => {
-    clearSession();
+    // Invalida a chave no servidor (este aparelho sai da conta)
+    apiFetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "logout" }),
+    }).catch(() => null);
+    setTimeout(clearSession, 300);
     setCourier(null);
     setDashboard(null);
     setTab("inicio");

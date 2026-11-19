@@ -44,6 +44,8 @@ export const couriers = sqliteTable("couriers", {
   baseLng: real("base_lng").notNull().default(-46.7678),
   rating: real("rating").notNull().default(4.9),
   totalDeliveries: integer("total_deliveries").notNull().default(0),
+  // Senha protegida (PBKDF2). Nunca sai do servidor.
+  passwordHash: text("password_hash"),
   // Última posição real (GPS do celular), atualizada pelo app durante o turno
   lastLat: real("last_lat"),
   lastLng: real("last_lng"),
@@ -142,4 +144,17 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
 export const appConfig = sqliteTable("app_config", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+});
+
+/* ------------------------------------------------------------------ */
+/* Sessões de login: cada aparelho conectado tem a sua chave própria.  */
+/* Guardamos só o hash da chave (SHA-256), nunca a chave em si.        */
+/* account_type prepara o terreno para os comércios ("store").         */
+/* ------------------------------------------------------------------ */
+export const sessions = sqliteTable("sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  accountType: text("account_type").notNull().default("courier"),
+  accountId: integer("account_id").notNull(),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+  expiresAt: ts("expires_at").notNull(),
 });

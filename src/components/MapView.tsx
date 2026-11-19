@@ -153,6 +153,14 @@ export default function MapView({ courier, activeOrder, notify, onOrderAction, g
       mapRef.current = map;
       setMapReady(true);
       setTimeout(() => map.invalidateSize(), 60);
+
+      // Recalcula o mapa sempre que a área muda de tamanho (barra do navegador,
+      // rotação da tela, teclado). Sem isso os blocos do mapa ficam desalinhados.
+      if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+        const ro = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+        ro.observe(containerRef.current);
+        map.on("unload", () => ro.disconnect());
+      }
     })();
     return () => {
       cancelled = true;

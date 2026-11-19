@@ -28,6 +28,13 @@ body {
 }
 
 /* ---------- Leaflet dark ---------- */
+/* Garante que o reset do Tailwind não estique/encolha os blocos do mapa */
+.leaflet-container img,
+.leaflet-container .leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
+}
+
 .leaflet-container {
   background: #0b0e13;
   font-family: var(--font-sans);

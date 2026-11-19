@@ -241,7 +241,8 @@ export default function AppShell() {
             </div>
           )}
           {tab === "mapa" && (
-            <div className="h-full pb-[68px] lg:pb-0">
+            // absolute inset-0: o mapa ocupa toda a área do <main> (h-full dava altura 0 no celular)
+            <div className="absolute inset-0 pb-[68px] lg:pb-0">
               <MapView courier={courier} activeOrder={dashboard?.activeOrder ?? null} notify={notify} onOrderAction={handleOrderAction} gps={gps} />
             </div>
           )}

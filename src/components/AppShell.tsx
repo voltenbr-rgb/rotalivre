@@ -8,6 +8,7 @@ import { apiFetch, clearSession, getToken, setToken } from "@/lib/session";
 import Header from "./Header";
 import HomeView from "./HomeView";
 import MapView from "./MapView";
+import Onboarding, { markOnboardingSeen, onboardingSeen } from "./Onboarding";
 import { useGeolocation } from "@/lib/useGeolocation";
 import RadioView from "./RadioView";
 import ReportsView from "./ReportsView";
@@ -31,6 +32,8 @@ export default function AppShell() {
   const [screen, setScreen] = useState<Screen>("checking");
   // GPS real ligado no app inteiro: o feed e o radar usam a posição atual
   const gps = useGeolocation();
+  // Tutorial de primeiro acesso (por conta, neste aparelho)
+  const [showTutorial, setShowTutorial] = useState(false);
   const [tab, setTab] = useState<Tab>("inicio");
   const [courier, setCourier] = useState<Courier | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -73,6 +76,7 @@ export default function AppShell() {
         if (c) {
           await loadDashboard();
           setScreen("app");
+          if (!onboardingSeen(c.id)) setShowTutorial(true);
           return;
         }
         clearSession();
@@ -92,6 +96,7 @@ export default function AppShell() {
     setCourier(c);
     setTab("inicio");
     setScreen("app");
+    if (!onboardingSeen(c.id)) setShowTutorial(true);
     await loadDashboard();
     notify(`Bem-vindo(a), ${c.nickname || c.name.split(" ")[0]}! Você já está online na praça.`);
   };
@@ -266,10 +271,20 @@ export default function AppShell() {
           )}
           {tab === "perfil" && (
             <div className="no-scrollbar h-full overflow-y-auto pb-24 lg:pb-10">
-              <ProfileView courier={courier} onSaved={(c) => { setCourier(c); refreshAll(); }} onLogout={handleLogout} notify={notify} />
+              <ProfileView courier={courier} onSaved={(c) => { setCourier(c); refreshAll(); }} onLogout={handleLogout} notify={notify} onOpenTutorial={() => setShowTutorial(true)} />
             </div>
           )}
         </main>
+
+        {showTutorial && (
+          <Onboarding
+            name={courier.nickname || courier.name.split(" ")[0]}
+            onClose={() => {
+              markOnboardingSeen(courier.id);
+              setShowTutorial(false);
+            }}
+          />
+        )}
 
         {/* Toast global */}
         {toast && (

@@ -14,6 +14,7 @@ interface Props {
   courier: Courier;
   onSaved: (c: Courier) => void;
   onLogout: () => void;
+  onOpenTutorial?: () => void;
   notify: (msg: string, tone?: "ok" | "warn" | "sos") => void;
 }
 
@@ -21,7 +22,7 @@ const inputCls =
   "h-13 w-full rounded-2xl border border-white/10 bg-white/4 px-4 py-3.5 text-[15px] text-white placeholder-zinc-600 outline-none transition focus:border-lime-400/60";
 const errCls = "border-red-500/60";
 
-export default function ProfileView({ courier, onSaved, onLogout, notify }: Props) {
+export default function ProfileView({ courier, onSaved, onLogout, notify, onOpenTutorial }: Props) {
   const [form, setForm] = useState({ ...courier });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -349,6 +350,14 @@ export default function ProfileView({ courier, onSaved, onLogout, notify }: Prop
           conferir relatórios e extratos na tela grande.
         </p>
         <InstallButton className="h-12 w-full text-sm" />
+        {onOpenTutorial && (
+          <button
+            onClick={onOpenTutorial}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 text-sm font-bold text-zinc-200 transition active:scale-[0.98]"
+          >
+            <BadgeCheck className="h-4.5 w-4.5 text-lime-400" /> VER O GUIA DO APP
+          </button>
+        )}
         <button
           onClick={onLogout}
           className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-500/25 bg-red-500/8 text-sm font-extrabold text-red-300 transition active:scale-[0.98]"

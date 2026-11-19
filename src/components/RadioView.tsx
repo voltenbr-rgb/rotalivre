@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Camera, ChevronDown, CloudRainWind, ImageOff, Mic, Moon, Sun, Pause, Play, Send, ShieldExclamationPoint, Siren,
+  Camera, ChevronDown, CloudRainWind, ImageOff, Images, Mic, Moon, Sun, SwitchCamera, Pause, Play, Send, ShieldExclamationPoint, Siren,
   Store, Trash2, TriangleExclamationPoint, X,
 } from "lucide-react";
 import type { ChatMessage, Courier, CourierStatus } from "@/lib/types";
@@ -113,7 +113,11 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  // Três entradas: câmera traseira, selfie (frontal) e galeria
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const selfieInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef(0);
 
@@ -171,13 +175,13 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
     if (!file) return;
     setPhotoBusy(true);
     try {
-      setPendingPhoto(await shrinkImage(file, 1024, 0.72));
+      setPendingPhoto(await shrinkImage(file, 1600, 0.84));
       setAlertsOpen(false);
     } catch {
       notify("Não foi possível abrir essa foto", "warn");
     } finally {
       setPhotoBusy(false);
-      if (photoInputRef.current) photoInputRef.current.value = "";
+      for (const r of [cameraInputRef, selfieInputRef, galleryInputRef]) if (r.current) r.current.value = "";
     }
   };
 
@@ -294,6 +298,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
         onClick={() => {
           setAlertsOpen(false);
           setStatusOpen(false);
+          setPhotoMenuOpen(false);
         }}
       >
         {messages.map((m, i) => (
@@ -344,6 +349,29 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
         </div>
       )}
 
+      {/* Menu da câmera: foto, selfie ou galeria */}
+      {photoMenuOpen && (
+        <div className={`slide-up mx-3 mb-1 grid grid-cols-3 gap-1 rounded-2xl p-2 ${T.sheet}`}>
+          {[
+            { label: "Tirar foto", icon: Camera, ref: cameraInputRef },
+            { label: "Selfie", icon: SwitchCamera, ref: selfieInputRef },
+            { label: "Galeria", icon: Images, ref: galleryInputRef },
+          ].map((o) => (
+            <button
+              key={o.label}
+              onClick={() => {
+                setPhotoMenuOpen(false);
+                o.ref.current?.click();
+              }}
+              className={`flex flex-col items-center gap-1 rounded-xl py-2.5 text-[11px] font-semibold ${T.sheetText}`}
+            >
+              <o.icon className="h-5 w-5 text-lime-500" />
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Prévia da foto antes de enviar */}
       {pendingPhoto && (
         <div className={`slide-up mx-3 mb-1 flex items-center gap-3 rounded-2xl p-2 ${T.sheet}`}>
@@ -351,7 +379,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
           <img src={pendingPhoto} alt="Prévia" className="h-16 w-16 rounded-xl object-cover" />
           <p className={`flex-1 text-xs ${T.sheetText}`}>
             Foto pronta. Escreva uma legenda (opcional) e toque em enviar.
-            <span className={`block text-[10px] ${T.hint}`}>Fica disponível por 5 horas.</span>
+            <span className={`block text-[10px] ${T.hint}`}>Fica disponível por 2 horas.</span>
           </p>
           <button
             onClick={() => setPendingPhoto(null)}
@@ -381,7 +409,7 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
         ) : (
           <div className={`flex min-h-11 flex-1 items-center rounded-full pr-2 pl-1 ${T.input}`}>
             <button
-              onClick={() => setAlertsOpen((v) => !v)}
+              onClick={() => { setAlertsOpen((v) => !v); setPhotoMenuOpen(false); }}
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${alertsOpen ? "text-amber-500" : T.icon}`}
               aria-label="Enviar alerta"
             >
@@ -396,20 +424,20 @@ export default function RadioView({ courier, notify, onStatusChange }: Props) {
               className={`h-11 min-w-0 flex-1 bg-transparent px-1 text-[15px] outline-none ${T.inputText}`}
             />
             <button
-              onClick={() => photoInputRef.current?.click()}
+              onClick={() => {
+                setPhotoMenuOpen((v) => !v);
+                setAlertsOpen(false);
+              }}
               disabled={photoBusy}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${T.icon} disabled:opacity-50`}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${photoMenuOpen ? "text-lime-500" : T.icon} disabled:opacity-50`}
               aria-label="Enviar foto ou selfie"
             >
               {photoBusy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Camera className="h-5 w-5" />}
             </button>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => onPickPhoto(e.target.files?.[0])}
-            />
+            {/* capture= abre a câmera direto (sem passar pela galeria) */}
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onPickPhoto(e.target.files?.[0])} />
+            <input ref={selfieInputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={(e) => onPickPhoto(e.target.files?.[0])} />
+            <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => onPickPhoto(e.target.files?.[0])} />
           </div>
         )}
 
@@ -479,7 +507,7 @@ function MessageBubble({
               </button>
             ) : (
               <p className={`flex items-center gap-1.5 py-2 pr-10 text-[13px] italic ${T.meta}`}>
-                <ImageOff className="h-4 w-4" /> Foto expirou (fica 5 h)
+                <ImageOff className="h-4 w-4" /> Foto expirou (fica 2 h)
               </p>
             )}
             {m.content && (

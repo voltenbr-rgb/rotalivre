@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { couriers, messageAudio, messagePhoto, messages } from "@/db/schema";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { haversineKm } from "@/lib/domain";
-import { purgeOldMessages, RETENTION_MS } from "@/lib/chat";
+import { PHOTO_RETENTION_MS, purgeOldMessages, RETENTION_MS } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 const NEAR_KM = 15;
 /** Posição de GPS considerada atual */
 const LIVE_MS = 10 * 60 * 1000;
-/** Foto: já reduzida no celular (~1024 px JPEG) */
-const MAX_PHOTO_B64 = 700_000;
+/** Foto: já reduzida no celular (até 1600 px JPEG, ~250-450 KB) */
+const MAX_PHOTO_B64 = 1_100_000;
 /** Áudio: até ~60 s de voz comprimida */
 const MAX_AUDIO_B64 = 900_000;
 
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
       senderNickname: couriers.nickname,
       senderPhoto: couriers.photoUrl,
       hasAudio: sql<number>`EXISTS (SELECT 1 FROM message_audio a WHERE a.message_id = ${messages.id})`,
-      hasPhoto: sql<number>`EXISTS (SELECT 1 FROM message_photo p WHERE p.message_id = ${messages.id})`,
+      hasPhoto: sql<number>`EXISTS (SELECT 1 FROM message_photo p WHERE p.message_id = ${messages.id} AND p.created_at >= ${Date.now() - PHOTO_RETENTION_MS})`,
     })
     .from(messages)
     .leftJoin(couriers, eq(messages.courierId, couriers.id));

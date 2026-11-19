@@ -4,8 +4,8 @@ import { messagePhoto, messages } from "@/db/schema";
 
 /** O rádio guarda só as últimas 24 horas */
 export const RETENTION_MS = 24 * 60 * 60 * 1000;
-/** Fotos do rádio duram só 5 horas (mais pesadas que texto/áudio) */
-export const PHOTO_RETENTION_MS = 5 * 60 * 60 * 1000;
+/** Fotos do rádio duram só 2 horas (mais pesadas que texto/áudio) */
+export const PHOTO_RETENTION_MS = 2 * 60 * 60 * 1000;
 
 /** Apaga fotos com mais de 5 h e mensagens (e áudios) com mais de 24 h */
 export async function purgeOldMessages() {

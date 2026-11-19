@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CircleCheck, ClipboardList, Clock, LoaderCircle, LocateFixed, LogOut, MapPin, MessageCircle,
+  CircleCheck, ClipboardList, Clock, Copy, LoaderCircle, LocateFixed, LogOut, MapPin, MessageCircle,
   Package, Phone, Plus, Save, Store as StoreIcon, Trash2, User,
 } from "lucide-react";
 import PointPicker from "./PointPicker";
@@ -546,9 +546,17 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
                     <p className="text-[11px] text-amber-300">O entregador errou o código {o.deliveryCodeAttempts}x</p>
                   )}
                 </div>
-                <a href={clientWa} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-xl bg-emerald-500 px-3 py-2 text-[12px] font-bold text-white">
-                  <MessageCircle className="h-4 w-4" /> Enviar ao cliente
-                </a>
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    onClick={() => copyText(o.deliveryCode!, notify)}
+                    className="flex items-center justify-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-[12px] font-bold text-white active:scale-95"
+                  >
+                    <Copy className="h-4 w-4" /> Copiar código
+                  </button>
+                  <a href={clientWa} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1 rounded-xl bg-emerald-500 px-3 py-2 text-[12px] font-bold text-white">
+                    <MessageCircle className="h-4 w-4" /> WhatsApp
+                  </a>
+                </div>
               </div>
             )}
 
@@ -593,4 +601,24 @@ function Field({ label, icon, children }: { label: string; icon?: React.ReactNod
       {children}
     </label>
   );
+}
+
+/** Copia para a área de transferência (com plano B para navegadores antigos) */
+async function copyText(text: string, notify: Props["notify"]) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const t = document.createElement("textarea");
+    t.value = text;
+    t.style.position = "fixed";
+    t.style.opacity = "0";
+    document.body.appendChild(t);
+    t.select();
+    try {
+      document.execCommand("copy");
+    } finally {
+      t.remove();
+    }
+  }
+  notify(`Código ${text} copiado`);
 }

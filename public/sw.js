@@ -1,5 +1,5 @@
 /* RotaLivre — Service Worker (cache apenas de ativos estáticos; API sempre online) */
-const CACHE = "rotalivre-static-v6";
+const CACHE = "rotalivre-static-v7";
 const STATIC_DESTINATIONS = ["style", "script", "font", "image"];
 
 self.addEventListener("install", (event) => {
@@ -52,17 +52,13 @@ self.addEventListener("push", (event) => {
     badge: "/icons/badge-96.png",
     tag: data.tag || "rotalivre",
     renotify: true,
-    vibrate: [200, 100, 200],
+    requireInteraction: data.tag === "corrida", // corrida fica na tela até tocar
+    vibrate: [300, 120, 300, 120, 300],
     data: { url: data.url || "/" },
   };
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      // Com o app aberto na tela, não precisa notificar (o feed já mostra)
-      const visible = list.some((c) => c.visibilityState === "visible" && c.focused);
-      if (visible && data.tag === "corrida") return;
-      return self.registration.showNotification(title, options);
-    }),
-  );
+  // Sempre mostra (com som/vibração), mesmo com o app aberto: o entregador
+  // pode estar com o celular no suporte da moto sem olhar para a tela.
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {

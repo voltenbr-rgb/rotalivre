@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
-  Bell, CircleCheck, ClipboardList, Clock, Copy, Link2, LoaderCircle, Map as MapIcon, LocateFixed, LogOut, MapPin, MessageCircle,
+  Bell, CircleCheck, ClipboardList, ClipboardPaste, Clock, Copy, Link2, LoaderCircle, Map as MapIcon, LocateFixed, LogOut, MapPin, MessageCircle,
   Package, Phone, Plus, Save, Store as StoreIcon, Trash2, User,
 } from "lucide-react";
 import PointPicker from "./PointPicker";
@@ -388,6 +388,47 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
   const [value, setValue] = useState("");
   const [valueTouched, setValueTouched] = useState(false);
   const [sending, setSending] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [pastedFrom, setPastedFrom] = useState("");
+
+  // Cliente mandou a localização no WhatsApp: cola aqui e o ponto já aparece no mapa
+  const applyPasted = async (raw?: string) => {
+    let text = raw ?? pasteText;
+    if (!text.trim()) {
+      try {
+        text = await navigator.clipboard.readText();
+        setPasteText(text);
+      } catch {
+        return notify("Cole o link ou as coordenadas no campo", "warn");
+      }
+    }
+    if (!text.trim()) return notify("A área de transferência está vazia", "warn");
+    setLocating(true);
+    try {
+      const res = await apiFetch("/api/geo/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return notify(data.error ?? "Não achei a localização", "warn");
+      const far = haversineKm(anchor.lat, anchor.lng, data.lat, data.lng);
+      if (far > 60) return notify(`Esse ponto fica a ${Math.round(far)} km da loja. Confira o link.`, "warn");
+      setDest({ lat: data.lat, lng: data.lng });
+      setF((cur) => ({
+        ...cur,
+        deliveryAddress: cur.deliveryAddress.trim() ? cur.deliveryAddress : data.address ?? "",
+        deliveryNeighborhood: cur.deliveryNeighborhood.trim() ? cur.deliveryNeighborhood : data.neighborhood ?? "",
+      }));
+      setPastedFrom(data.address ? `${data.address}${data.neighborhood ? ` • ${data.neighborhood}` : ""}` : `${data.lat.toFixed(5)}, ${data.lng.toFixed(5)}`);
+      notify("Localização marcada no mapa! Confira o número da casa.");
+    } catch {
+      notify("Falha de conexão. Tente de novo.", "warn");
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const km = useMemo(
     () => (dest ? Math.max(0.5, Math.round(haversineKm(anchor.lat, anchor.lng, dest.lat, dest.lng) * 1.3 * 10) / 10) : null),
@@ -438,6 +479,38 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
 
   return (
     <section className="space-y-4">
+      <div className="rounded-2xl border border-lime-400/25 bg-lime-400/6 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-bold tracking-wide text-lime-300 uppercase">
+          <ClipboardPaste className="h-3.5 w-3.5" /> Cliente mandou a localização?
+        </p>
+        <p className="mt-0.5 text-[12px] text-zinc-400">Cole o link do Google Maps, a localização do WhatsApp ou as coordenadas.</p>
+        <div className="mt-2 flex gap-2">
+          <input
+            className={inputCls + " min-w-0 flex-1"}
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            onPaste={(e) => {
+              const t = e.clipboardData.getData("text");
+              if (t) {
+                e.preventDefault();
+                setPasteText(t);
+                applyPasted(t);
+              }
+            }}
+            placeholder="maps.app.goo.gl/…  ou  -19.0089, -57.6527"
+          />
+          <button
+            onClick={() => applyPasted()}
+            disabled={locating}
+            className="flex h-12 shrink-0 items-center gap-1.5 rounded-2xl bg-lime-400 px-4 text-sm font-black text-zinc-950 active:scale-95 disabled:opacity-60"
+          >
+            {locating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ClipboardPaste className="h-4 w-4" />}
+            {pasteText.trim() ? "Usar" : "Colar"}
+          </button>
+        </div>
+        {pastedFrom && <p className="mt-1.5 text-[12px] text-lime-200">📍 {pastedFrom}</p>}
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Nome do cliente" icon={<User className="h-3.5 w-3.5" />}>
           <input className={inputCls} value={f.clientName} onChange={(e) => setF({ ...f, clientName: e.target.value })} placeholder="Ex.: Maria" />

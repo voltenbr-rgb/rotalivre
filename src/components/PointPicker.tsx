@@ -90,8 +90,8 @@ export default function PointPicker({ value, onChange, anchor, anchorEmoji = "ðŸ
   useEffect(() => {
     if (!value || !mapRef.current) return;
     const key = `${value.lat.toFixed(5)},${value.lng.toFixed(5)}`;
-    if (key !== lastCentered.current && !mapRef.current.getBounds().contains([value.lat, value.lng])) {
-      mapRef.current.setView([value.lat, value.lng], 16);
+    if (key !== lastCentered.current && !mapRef.current.getBounds().pad(-0.25).contains([value.lat, value.lng])) {
+      mapRef.current.setView([value.lat, value.lng], 17);
     }
     lastCentered.current = key;
   }, [value]);

@@ -16,11 +16,28 @@ interface Props {
   refreshDashboard: () => Promise<void>;
   notify: (msg: string, tone?: "ok" | "warn" | "sos") => void;
   goToMap: () => void;
+  /** Abre a janela do código de 4 dígitos (pedidos de loja) */
+  askDeliveryCode: (order: Order, error?: string) => Promise<string | null>;
+}
+
+/** Pedidos ignorados ficam escondidos só neste aparelho (não somem para os outros) */
+const DISMISSED_KEY = "rl_dismissed_orders";
+function loadDismissed(): Set<number> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]"));
+  } catch {
+    return new Set();
+  }
+}
+function saveDismissed(ids: Set<number>) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids].slice(-200)));
+  } catch { /* ignore */ }
 }
 
 type SortMode = "valor" | "taxa" | "distancia";
 
-export default function HomeView({ dashboard, refreshDashboard, notify, goToMap }: Props) {
+export default function HomeView({ dashboard, refreshDashboard, notify, goToMap, askDeliveryCode }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [sort, setSort] = useState<SortMode>("valor");
   const [acting, setActing] = useState(false);
@@ -31,7 +48,8 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap 
     try {
       const res = await apiFetch("/api/orders");
       const data = await res.json();
-      const list: Order[] = data.orders ?? [];
+      const dismissed = loadDismissed();
+      const list: Order[] = (data.orders ?? []).filter((o: Order) => !dismissed.has(o.id));
       if (!firstLoad.current) {
         const fresh = list.filter((o) => !knownIds.current.has(o.id));
         if (fresh.length > 0) notify(`Nova corrida na praça: ${fresh[0].establishment} • ${fmtBRL(fresh[0].valueNet)}`);
@@ -59,19 +77,47 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap 
   }, [orders, sort]);
 
   const act = async (order: Order, action: "accept" | "pickup" | "deliver" | "dismiss") => {
+    if (action === "dismiss") {
+      const ids = loadDismissed();
+      ids.add(order.id);
+      saveDismissed(ids);
+    }
+    // Pedido de loja: pede o código que o cliente recebeu
+    let code: string | null = null;
+    let codeError: string | undefined;
     setActing(true);
     try {
-      const res = await apiFetch(`/api/orders/${order.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        notify(data.error ?? "Algo deu errado", "warn");
-        if (action === "accept") loadOrders();
+      for (;;) {
+        if (action === "deliver" && order.needsCode) {
+          code = await askDeliveryCode(order, codeError);
+          if (!code) return;
+        }
+        const res = await apiFetch(`/api/orders/${order.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, code }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          // Código errado: abre a janela de novo mostrando o erro
+          if (action === "deliver" && data.needsCode && data.attemptsLeft > 0) {
+            codeError = data.error;
+            continue;
+          }
+          notify(data.error ?? "Algo deu errado", "warn");
+          if (action === "accept") loadOrders();
+          return;
+        }
+        await afterAction(order, action, data);
         return;
       }
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const afterAction = async (order: Order, action: "accept" | "pickup" | "deliver" | "dismiss", data: { earned?: number; tip?: number | null }) => {
+    {
       if (action === "accept") {
         notify(`Corrida ${order.code} aceita! Abrindo a rota: partida e destino no mapa`);
         setOrders((prev) => prev.filter((o) => o.id !== order.id));
@@ -82,15 +128,13 @@ export default function HomeView({ dashboard, refreshDashboard, notify, goToMap 
       }
       if (action === "pickup") notify("Coleta confirmada. Boa entrega!");
       if (action === "deliver") {
-        notify(`Entrega concluída! +${fmtBRL(data.earned)} no seu saldo`);
-        if (data.tip) setTimeout(() => notify(`Gorjeta recebida: +${fmtBRL(data.tip)}`), 600);
+        notify(`Entrega concluída! +${fmtBRL(data.earned ?? 0)} no seu saldo`);
+        if (data.tip) setTimeout(() => notify(`Gorjeta recebida: +${fmtBRL(data.tip!)}`), 600);
         if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
       }
       if (action === "dismiss") setOrders((prev) => prev.filter((o) => o.id !== order.id));
       await refreshDashboard();
       loadOrders();
-    } finally {
-      setActing(false);
     }
   };
 

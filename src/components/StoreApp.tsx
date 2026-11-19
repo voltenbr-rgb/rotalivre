@@ -324,7 +324,7 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
       });
       const data = await res.json();
       if (!res.ok) return notify(data.error ?? "Não foi possível lançar", "warn");
-      notify(`Pedido ${data.order.code} lançado! Os entregadores da região já foram avisados.`);
+      notify(`Pedido ${data.order.code} lançado! Código de entrega: ${data.order.deliveryCode}. Envie ao cliente.`);
       if (navigator.vibrate) navigator.vibrate(60);
       onCreated();
     } catch {
@@ -465,6 +465,17 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
 /* Acompanhar pedidos                                                  */
 /* ------------------------------------------------------------------ */
 function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: () => void; notify: Props["notify"] }) {
+  const confirmDelivered = async (id: number) => {
+    const res = await apiFetch(`/api/store/orders/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirm_delivered" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    notify(res.ok ? "Entrega confirmada pela loja" : data.error ?? "Não foi possível confirmar", res.ok ? "ok" : "warn");
+    reload();
+  };
+
   const cancel = async (id: number) => {
     const res = await apiFetch(`/api/store/orders/${id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
@@ -487,6 +498,13 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
         const st = STATUS[o.status] ?? STATUS.available;
         const time = new Date(o.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         const wa = o.courierPhone ? `https://wa.me/55${o.courierPhone.replace(/\D/g, "")}` : null;
+        const open = ["available", "accepted", "picked_up"].includes(o.status);
+        // Mensagem pronta para o cliente com o código de entrega
+        const clientMsg = encodeURIComponent(
+          `Olá, ${o.clientName}! Seu pedido ${o.code} já está com a gente. ` +
+            `Quando o entregador chegar, informe o código de entrega: ${o.deliveryCode}`,
+        );
+        const clientWa = o.clientPhone ? `https://wa.me/55${o.clientPhone.replace(/\D/g, "")}?text=${clientMsg}` : `https://wa.me/?text=${clientMsg}`;
         return (
           <article key={o.id} className="rounded-3xl border border-white/8 bg-[#101319] p-4">
             <div className="flex items-start justify-between gap-3">
@@ -514,6 +532,21 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
               </span>
             </div>
 
+            {o.deliveryCode && open && (
+              <div className="mt-3 flex items-center gap-3 rounded-2xl border border-lime-400/25 bg-lime-400/8 p-3">
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold tracking-widest text-lime-300/80 uppercase">Código de entrega (só para o cliente)</p>
+                  <p className="font-display text-2xl font-black tracking-[0.3em] text-white">{o.deliveryCode}</p>
+                  {o.deliveryCodeAttempts > 0 && (
+                    <p className="text-[11px] text-amber-300">O entregador errou o código {o.deliveryCodeAttempts}x</p>
+                  )}
+                </div>
+                <a href={clientWa} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-xl bg-emerald-500 px-3 py-2 text-[12px] font-bold text-white">
+                  <MessageCircle className="h-4 w-4" /> Enviar ao cliente
+                </a>
+              </div>
+            )}
+
             {o.courierName && (
               <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/4 p-3">
                 <CircleCheck className="h-5 w-5 shrink-0 text-emerald-400" />
@@ -532,6 +565,11 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
             {o.status === "available" && (
               <button onClick={() => cancel(o.id)} className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-red-300">
                 <Trash2 className="h-3.5 w-3.5" /> Cancelar pedido
+              </button>
+            )}
+            {(o.status === "accepted" || o.status === "picked_up") && (
+              <button onClick={() => confirmDelivered(o.id)} className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-zinc-400">
+                <CircleCheck className="h-3.5 w-3.5" /> Confirmar entrega pela loja (cliente sem o código)
               </button>
             )}
           </article>

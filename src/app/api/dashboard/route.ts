@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { forCourier } from "@/lib/delivery";
 import { db } from "@/db";
 import { transactions, orders, couriers } from "@/db/schema";
 import { and, eq, gte, inArray, desc, ne } from "drizzle-orm";
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
   const onlinePartners = partners.filter((p) => p.status === "online" || p.status === "em_entrega").length;
 
   const activeOrder = active[0]
-    ? { ...active[0], ratePerKm: active[0].valueNet / active[0].distanceKm, createdAt: active[0].createdAt.toISOString(), acceptedAt: active[0].acceptedAt?.toISOString() ?? null }
+    ? forCourier({ ...active[0], ratePerKm: active[0].valueNet / active[0].distanceKm, createdAt: active[0].createdAt.toISOString(), acceptedAt: active[0].acceptedAt?.toISOString() ?? null })
     : null;
 
   return NextResponse.json({

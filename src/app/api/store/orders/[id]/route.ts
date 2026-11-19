@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { getSessionStore, unauthorized } from "@/lib/auth";
+import { completeDelivery } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +20,25 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!updated) {
     return NextResponse.json({ error: "Só dá para cancelar pedido que ainda não foi aceito" }, { status: 409 });
   }
+  return NextResponse.json({ ok: true });
+}
+
+/** Loja confirma a entrega manualmente (ex.: cliente sem o código ou entregador errou 5 vezes) */
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const st = await getSessionStore(req);
+  if (!st) return unauthorized();
+  const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  if (body.action !== "confirm_delivered") return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.id, parseInt(id)), eq(orders.storeId, st.id)))
+    .limit(1);
+  if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+  if (!order.courierId || (order.status !== "accepted" && order.status !== "picked_up")) {
+    return NextResponse.json({ error: "Só dá para confirmar pedido que está com um entregador" }, { status: 409 });
+  }
+  await completeDelivery(order, order.courierId);
   return NextResponse.json({ ok: true });
 }

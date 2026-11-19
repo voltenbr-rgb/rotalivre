@@ -61,6 +61,8 @@ export interface Order {
   acceptedVehicles?: string;
   clientPhone?: string;
   notes?: string;
+  /** Pedido de loja: o entregador precisa do código do cliente para fechar */
+  needsCode?: boolean;
 }
 
 export type VehicleType = "moto" | "bicicleta" | "scooter" | "carro";
@@ -79,6 +81,8 @@ export interface Store {
 }
 
 export interface StoreOrder extends Order {
+  deliveryCode: string | null;
+  deliveryCodeAttempts: number;
   courierName: string | null;
   courierNickname: string | null;
   courierPhone: string | null;

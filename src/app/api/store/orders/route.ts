@@ -6,6 +6,7 @@ import { getSessionStore, unauthorized } from "@/lib/auth";
 import { haversineKm, orderCode } from "@/lib/domain";
 import { fmtBRL, fmtKm } from "@/lib/format";
 import { inBackground, notifyCouriersNear } from "@/lib/push";
+import { newDeliveryCode } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
       notes: String(b.notes ?? "").trim().slice(0, 240),
       storeId: st.id,
       acceptedVehicles,
+      deliveryCode: newDeliveryCode(),
       status: "available",
     })
     .returning();

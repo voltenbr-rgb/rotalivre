@@ -36,6 +36,18 @@ export default function AppShell() {
   const gps = useGeolocation();
   // Tutorial de primeiro acesso (por conta, neste aparelho)
   const [showTutorial, setShowTutorial] = useState(false);
+
+  /* ---------- Código de entrega (pedidos de loja) ---------- */
+  const [codeAsk, setCodeAsk] = useState<{ order: Order; error?: string; resolve: (c: string | null) => void } | null>(null);
+  const askDeliveryCode = useCallback(
+    (order: Order, error?: string) => new Promise<string | null>((resolve) => setCodeAsk({ order, error, resolve })),
+    [],
+  );
+
+  /* ---------- Botão "voltar" do celular ---------- */
+  // Em vez de fechar o app: volta para o Início; no Início, pergunta se quer sair.
+  const [exitAsk, setExitAsk] = useState(false);
+  const backState = useRef({ tab: "inicio", screen: "checking" as string, exitAsk: false });
   const [tab, setTab] = useState<Tab>("inicio");
   const [courier, setCourier] = useState<Courier | null>(null);
   // Conta de loja (quando o perfil deste aparelho é "lojista")
@@ -111,6 +123,34 @@ export default function AppShell() {
     return () => clearInterval(t);
   }, [screen, loadDashboard]);
 
+  // Mantém o estado atual acessível para o "voltar" (o listener é registrado uma vez)
+  useEffect(() => {
+    backState.current = { tab, screen, exitAsk };
+  });
+
+  useEffect(() => {
+    // Uma "página extra" no histórico segura o primeiro voltar dentro do app
+    const guard = () => history.pushState({ rlGuard: true }, "");
+    guard();
+    const onPop = () => {
+      const st = backState.current;
+      if (st.exitAsk) {
+        // Já perguntou e a pessoa apertou voltar de novo: deixa sair
+        setExitAsk(false);
+        return;
+      }
+      if (st.screen === "app" && st.tab !== "inicio") {
+        setTab("inicio");
+        guard();
+        return;
+      }
+      setExitAsk(true);
+      guard();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const handleAuthenticated = async (c: Courier, token: string) => {
     setToken(token);
     setRole("courier");
@@ -177,13 +217,25 @@ export default function AppShell() {
   const handleOrderAction = useCallback(
     async (order: Order, action: "pickup" | "deliver") => {
       try {
-        const res = await apiFetch(`/api/orders/${order.id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
+        let code: string | null = null;
+        let codeError: string | undefined;
+        let data = {} as { error?: string; earned: number; tip?: number | null; needsCode?: boolean; attemptsLeft?: number };
+        for (;;) {
+          if (action === "deliver" && order.needsCode) {
+            code = await askDeliveryCode(order, codeError);
+            if (!code) return;
+          }
+          const res = await apiFetch(`/api/orders/${order.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, code }),
+          });
+          data = await res.json();
+          if (res.ok) break;
+          if (action === "deliver" && data.needsCode && (data.attemptsLeft ?? 0) > 0) {
+            codeError = data.error;
+            continue;
+          }
           notify(data.error ?? "Algo deu errado", "warn");
           return;
         }
@@ -198,7 +250,7 @@ export default function AppShell() {
         notify("Falha de conexão. Tente de novo.", "warn");
       }
     },
-    [notify, refreshAll],
+    [notify, refreshAll, askDeliveryCode],
   );
 
   if (screen === "checking") {
@@ -213,6 +265,43 @@ export default function AppShell() {
       </div>
     );
   }
+
+  const exitView = exitAsk && (
+    <div className="fixed inset-0 z-[96] flex items-center justify-center bg-black/75 p-6" onClick={() => setExitAsk(false)}>
+      <div onClick={(e) => e.stopPropagation()} className="slide-up w-full max-w-[320px] rounded-3xl border border-white/10 bg-[#0d1015] p-5 shadow-2xl">
+        <p className="font-display text-lg font-extrabold text-white">Deseja sair do RotaLivre?</p>
+        <p className="mt-1 text-[13px] leading-snug text-zinc-400">Você continua logado e pode voltar quando quiser.</p>
+        <div className="mt-5 flex gap-2">
+          <button onClick={() => setExitAsk(false)} className="h-12 flex-1 rounded-2xl bg-lime-400 text-sm font-black text-zinc-950">
+            FICAR
+          </button>
+          <button
+            onClick={() => {
+              // Tira a "página extra" e volta: no app instalado isso fecha
+              backState.current.exitAsk = true;
+              history.go(-2);
+              setTimeout(() => setExitAsk(false), 400);
+            }}
+            className="h-12 flex-1 rounded-2xl border border-white/12 bg-white/5 text-sm font-bold text-zinc-200"
+          >
+            Sair
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const codeView = codeAsk && (
+    <DeliveryCodeDialog
+      key={codeAsk.order.id + (codeAsk.error ?? "")}
+      order={codeAsk.order}
+      error={codeAsk.error}
+      onDone={(c) => {
+        codeAsk.resolve(c);
+        setCodeAsk(null);
+      }}
+    />
+  );
 
   const toastView = toast && (
     <div
@@ -235,12 +324,18 @@ export default function AppShell() {
       <>
         <StoreApp store={store} onStoreChange={setStore} onLogout={handleOtherLogout} notify={notify} />
         {toastView}
+        {exitView}
       </>
     );
   }
 
   if (screen === "admin") {
-    return <AdminPanel onLogout={handleOtherLogout} />;
+    return (
+      <>
+        <AdminPanel onLogout={handleOtherLogout} />
+        {exitView}
+      </>
+    );
   }
 
   if (screen === "auth" || !courier) {
@@ -248,6 +343,7 @@ export default function AppShell() {
       <>
         <RoleGate onCourier={handleAuthenticated} onStore={handleStoreAuthenticated} onAdmin={handleAdminAuthenticated} />
         {toastView}
+        {exitView}
       </>
     );
   }
@@ -331,7 +427,7 @@ export default function AppShell() {
         <main className="relative min-h-0 flex-1">
           {tab === "inicio" && (
             <div className="no-scrollbar h-full overflow-y-auto pb-24 lg:pb-10">
-              <HomeView dashboard={dashboard} refreshDashboard={refreshAll} notify={notify} goToMap={() => setTab("mapa")} />
+              <HomeView dashboard={dashboard} refreshDashboard={refreshAll} notify={notify} goToMap={() => setTab("mapa")} askDeliveryCode={askDeliveryCode} />
             </div>
           )}
           {tab === "mapa" && (
@@ -356,6 +452,9 @@ export default function AppShell() {
             </div>
           )}
         </main>
+
+        {codeView}
+        {exitView}
 
         {showTutorial && (
           <Onboarding
@@ -411,6 +510,50 @@ export default function AppShell() {
             })}
           </div>
         </nav>
+      </div>
+    </div>
+  );
+}
+
+/** Janela para digitar o código de 4 dígitos que o cliente recebeu da loja */
+function DeliveryCodeDialog({ order, error, onDone }: { order: Order; error?: string; onDone: (code: string | null) => void }) {
+  const [code, setCode] = useState("");
+  const ok = code.length === 4;
+  return (
+    <div className="fixed inset-0 z-[97] flex items-end justify-center bg-black/80 sm:items-center" onClick={() => onDone(null)}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="slide-up w-full max-w-[400px] rounded-t-3xl border border-white/10 bg-[#0d1015] p-6 sm:rounded-3xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)" }}
+      >
+        <p className="font-display text-xl font-black text-white">Código de entrega</p>
+        <p className="mt-1 text-[13px] leading-snug text-zinc-400">
+          Peça ao cliente <b className="text-white">{order.clientName}</b> o código de 4 dígitos que ele recebeu da loja{" "}
+          <b className="text-white">{order.establishment}</b>.
+        </p>
+        <input
+          autoFocus
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          onKeyDown={(e) => e.key === "Enter" && ok && onDone(code)}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          placeholder="••••"
+          className="mt-4 h-16 w-full rounded-2xl border border-white/12 bg-white/5 text-center font-display text-4xl font-black tracking-[0.6em] text-white outline-none focus:border-lime-400/70"
+        />
+        {error && <p className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] text-red-300">{error}</p>}
+        <div className="mt-4 flex gap-2">
+          <button onClick={() => onDone(null)} className="h-13 rounded-2xl border border-white/12 bg-white/5 px-5 py-3.5 text-sm font-bold text-zinc-300">
+            Cancelar
+          </button>
+          <button
+            disabled={!ok}
+            onClick={() => onDone(code)}
+            className="h-13 flex-1 rounded-2xl bg-lime-400 py-3.5 text-sm font-black text-zinc-950 disabled:opacity-40"
+          >
+            CONFIRMAR ENTREGA
+          </button>
+        </div>
       </div>
     </div>
   );

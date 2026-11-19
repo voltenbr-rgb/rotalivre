@@ -1,16 +1,25 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, transactions, couriers } from "@/db/schema";
+import { orders, couriers } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
-import { grossFromNet } from "@/lib/domain";
+import { completeDelivery, forCourier, MAX_CODE_ATTEMPTS } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Ações do entregador sobre um pedido:
+ * - accept: pega o pedido (só se ainda estiver disponível)
+ * - pickup: confirma a coleta (só quem aceitou)
+ * - deliver: fecha a entrega (só quem aceitou). Pedido de loja exige o código
+ *   de 4 dígitos que o cliente recebeu da loja.
+ * - dismiss: some só do feed deste entregador (não afeta os outros)
+ */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const orderId = parseInt(id);
-  const { action } = await req.json();
+  const body = await req.json().catch(() => ({}));
+  const action = String(body.action ?? "");
   const main = await getSessionCourier(req);
   if (!main) return unauthorized();
 
@@ -20,6 +29,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (action === "accept") {
     if (order.status !== "available") {
       return NextResponse.json({ error: "Pedido já foi aceito por outro entregador" }, { status: 409 });
+    }
+    const vehicles = order.acceptedVehicles;
+    if (vehicles && vehicles !== "todos" && !vehicles.split(",").includes(main.vehicleType || "moto")) {
+      return NextResponse.json({ error: "Este pedido não aceita o seu tipo de veículo" }, { status: 403 });
     }
     const active = await db
       .select()
@@ -41,7 +54,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ order: serialize(updated) });
   }
 
+  if (action === "dismiss") {
+    // Pedido de loja continua no feed dos outros; o app esconde só para este entregador
+    if (!order.storeId && order.status === "available") {
+      await db.update(orders).set({ status: "dismissed" }).where(eq(orders.id, orderId));
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  // Daqui em diante, só quem aceitou o pedido pode mexer nele
+  if (order.courierId !== main.id) {
+    return NextResponse.json({ error: "Este pedido não é seu" }, { status: 403 });
+  }
+
   if (action === "pickup") {
+    if (order.status !== "accepted") {
+      return NextResponse.json({ error: "Coleta já confirmada ou pedido encerrado" }, { status: 409 });
+    }
     const [updated] = await db
       .update(orders)
       .set({ status: "picked_up", pickedUpAt: new Date() })
@@ -51,53 +80,47 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   if (action === "deliver") {
-    const [updated] = await db
-      .update(orders)
-      .set({ status: "delivered", deliveredAt: new Date() })
-      .where(eq(orders.id, orderId))
-      .returning();
-    const { gross, fee } = grossFromNet(order.valueNet);
-    const [tx] = await db
-      .insert(transactions)
-      .values({
-        courierId: main.id,
-        orderId: order.id,
-        type: "entrega",
-        description: `${order.establishment} → ${order.deliveryNeighborhood}`,
-        amountGross: gross,
-        feeAmount: fee,
-        amountNet: order.valueNet,
-        km: order.distanceKm,
-      })
-      .returning();
-
-    // Gorjeta real virá do cliente/lojista quando houver lançamento de pedidos
-    const tip: number | null = null;
-
-    await db
-      .update(couriers)
-      .set({ status: "online", totalDeliveries: main.totalDeliveries + 1 })
-      .where(eq(couriers.id, main.id));
-
-    return NextResponse.json({ order: serialize(updated), earned: tx.amountNet, tip });
-  }
-
-  if (action === "dismiss") {
-    // Recusar é livre: nenhuma punição, apenas some do seu feed
-    await db.update(orders).set({ status: "dismissed" }).where(eq(orders.id, orderId));
-    return NextResponse.json({ ok: true });
+    if (order.status !== "accepted" && order.status !== "picked_up") {
+      return NextResponse.json({ error: "Pedido já encerrado" }, { status: 409 });
+    }
+    if (order.deliveryCode) {
+      if (order.deliveryCodeAttempts >= MAX_CODE_ATTEMPTS) {
+        return NextResponse.json(
+          { error: "Muitas tentativas erradas. Peça para a loja confirmar a entrega pelo painel dela.", locked: true },
+          { status: 423 },
+        );
+      }
+      const given = String(body.code ?? "").replace(/\D/g, "");
+      if (given !== order.deliveryCode) {
+        const attempts = order.deliveryCodeAttempts + 1;
+        await db.update(orders).set({ deliveryCodeAttempts: attempts }).where(eq(orders.id, orderId));
+        const left = MAX_CODE_ATTEMPTS - attempts;
+        return NextResponse.json(
+          {
+            error: left > 0
+              ? `Código incorreto. Peça ao cliente o código de 4 dígitos. (${left} tentativa${left > 1 ? "s" : ""})`
+              : "Código incorreto. Tentativas esgotadas: peça para a loja confirmar a entrega.",
+            needsCode: true,
+            attemptsLeft: left,
+          },
+          { status: 400 },
+        );
+      }
+    }
+    const done = await completeDelivery(order, main.id);
+    return NextResponse.json({ order: serialize(done.order), earned: done.earned, tip: null });
   }
 
   return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
 }
 
 function serialize(o: typeof orders.$inferSelect) {
-  return {
+  return forCourier({
     ...o,
     ratePerKm: Math.round((o.valueNet / o.distanceKm) * 100) / 100,
     createdAt: o.createdAt.toISOString(),
     acceptedAt: o.acceptedAt?.toISOString() ?? null,
     pickedUpAt: o.pickedUpAt?.toISOString() ?? null,
     deliveredAt: o.deliveredAt?.toISOString() ?? null,
-  };
+  });
 }

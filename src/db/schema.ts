@@ -90,6 +90,9 @@ export const orders = sqliteTable("orders", {
   // Veículos aceitos: "todos" ou lista separada por vírgula (moto,bicicleta,scooter,carro)
   acceptedVehicles: text("accepted_vehicles").notNull().default("todos"),
   clientPhone: text("client_phone").notNull().default(""),
+  // Código de 4 dígitos que só a loja e o cliente sabem; fecha a entrega
+  deliveryCode: text("delivery_code"),
+  deliveryCodeAttempts: integer("delivery_code_attempts").notNull().default(0),
   notes: text("notes").notNull().default(""),
   createdAt: ts("created_at").notNull().$defaultFn(now),
   acceptedAt: ts("accepted_at"),

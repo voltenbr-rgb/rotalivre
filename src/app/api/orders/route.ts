@@ -4,6 +4,7 @@ import { orders } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { getSessionCourier, unauthorized } from "@/lib/auth";
 import { haversineKm } from "@/lib/domain";
+import { forCourier } from "@/lib/delivery";
 
 /** Raio do feed: só aparecem coletas até esta distância do entregador */
 const FEED_RADIUS_KM = 25;
@@ -61,11 +62,13 @@ export async function GET(req: Request) {
 
   // Pedidos de lojas reais primeiro
   fresh.sort((a, b) => Number(!!b.storeId) - Number(!!a.storeId));
-  const result = fresh.slice(0, 12).map((o) => ({
-    ...o,
-    ratePerKm: Math.round((o.valueNet / o.distanceKm) * 100) / 100,
-    createdAt: o.createdAt.toISOString(),
-  }));
+  const result = fresh.slice(0, 12).map((o) =>
+    forCourier({
+      ...o,
+      ratePerKm: Math.round((o.valueNet / o.distanceKm) * 100) / 100,
+      createdAt: o.createdAt.toISOString(),
+    }),
+  );
 
   return NextResponse.json({ orders: result });
 }

@@ -35,6 +35,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="pt-BR">
+      <head>
+        {/* Guarda o convite de instalação do Chrome assim que ele aparece (antes do app carregar) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__rlInstallPrompt=e;window.dispatchEvent(new Event('rl-install-available'));});",
+          }}
+        />
+      </head>
       <body className="bg-[#05070a] text-zinc-100 antialiased">{children}</body>
     </html>
   );

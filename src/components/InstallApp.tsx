@@ -16,6 +16,8 @@ export type Platform = "ios" | "android" | "desktop";
  */
 let earlyPrompt: any = null;
 if (typeof window !== "undefined") {
+  // Capturado ainda mais cedo por um script no <head> (layout.tsx)
+  earlyPrompt = (window as any).__rlInstallPrompt ?? null;
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     earlyPrompt = e;
@@ -40,8 +42,12 @@ export function usePwaInstall() {
     const mq = window.matchMedia("(display-mode: standalone)");
     setStandalone(mq.matches || (window.navigator as any).standalone === true);
     setPlatform(detectPlatform());
-    if (earlyPrompt) setDeferred(earlyPrompt);
-    const onAvailable = () => setDeferred(earlyPrompt);
+    const current = () => earlyPrompt ?? (window as any).__rlInstallPrompt ?? null;
+    if (current()) setDeferred(current());
+    const onAvailable = () => {
+      earlyPrompt = current();
+      setDeferred(earlyPrompt);
+    };
     window.addEventListener("rl-install-available", onAvailable);
     const onPrompt = (e: Event) => {
       e.preventDefault();
@@ -64,12 +70,17 @@ export function usePwaInstall() {
 
   const promptInstall = useCallback(async () => {
     if (!deferred) return false;
-    deferred.prompt();
-    const choice = await deferred.userChoice;
-    if (choice.outcome === "accepted") {
-      earlyPrompt = null;
-      setDeferred(null);
-      return true;
+    // O convite do Chrome só pode ser usado UMA vez: descarta já, aceito ou não
+    const ev = deferred;
+    earlyPrompt = null;
+    (window as any).__rlInstallPrompt = null;
+    setDeferred(null);
+    try {
+      ev.prompt();
+      const choice = await ev.userChoice;
+      if (choice.outcome === "accepted") return true;
+    } catch {
+      /* convite já usado/expirado: mostra o passo a passo */
     }
     return false;
   }, [deferred]);
@@ -261,11 +272,18 @@ function InstallModal({
             </ol>
           ) : platform === "android" ? (
             <ol className="space-y-2.5 text-sm text-zinc-300">
-              <Step n={1} icon={<Smartphone className="h-4 w-4" />} text="Abra este endereço no Chrome, Brave ou Samsung Internet" />
+              <Step n={1} icon={<Smartphone className="h-4 w-4" />} text="Abra este endereço no Google Chrome (o mais garantido) ou Samsung Internet" />
               <Step n={2} icon={<Download className="h-4 w-4" />} text="Toque no menu ⋮ e em “Instalar app” ou “Adicionar à tela inicial”" />
               <Step n={3} icon={<Check className="h-4 w-4" />} text="Pronto: o RotaLivre abre em tela cheia, como um aplicativo" />
             </ol>
-          ) : (
+          ) : null}
+          {platform === "android" && (
+            <p className="rounded-xl bg-white/5 px-3 py-2 text-[11px] leading-snug text-zinc-400">
+              Se no menu ⋮ aparecer <b className="text-zinc-200">“Abrir app”</b> em vez de “Instalar”, o RotaLivre já está
+              instalado: procure o ícone na tela do celular.
+            </p>
+          )}
+          {platform === "desktop" && (
             <ol className="space-y-2.5 text-sm text-zinc-300">
               <Step n={1} icon={<Monitor className="h-4 w-4" />} text="Abra este endereço no Google Chrome ou no Microsoft Edge" />
               <Step n={2} icon={<Download className="h-4 w-4" />} text="Clique no ícone de instalar no canto direito da barra de endereço, ou no menu ⋮ → “Instalar RotaLivre”" />

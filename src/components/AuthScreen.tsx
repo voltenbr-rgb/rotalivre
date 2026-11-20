@@ -230,16 +230,16 @@ export default function AuthScreen({ onAuthenticated, onBack }: Props) {
 
               <div className="mt-6 space-y-3">
                 <button
-                  onClick={() => setView("register")}
+                  onClick={() => setView("login")}
                   className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-lime-400 text-base font-black text-zinc-950 shadow-[0_12px_28px_rgba(163,230,53,0.3)] transition active:scale-[0.98]"
                 >
-                  <UserPlus className="h-5 w-5" /> QUERO SER ENTREGADOR
+                  <LogIn className="h-5 w-5" /> ENTRAR
                 </button>
                 <button
-                  onClick={() => setView("login")}
+                  onClick={() => setView("register")}
                   className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/4 text-base font-extrabold text-white transition active:scale-[0.98]"
                 >
-                  <LogIn className="h-5 w-5 text-lime-300" /> JÁ TENHO CONTA — ENTRAR
+                  <UserPlus className="h-5 w-5 text-lime-300" /> AINDA NÃO TENHO CONTA — CADASTRAR
                 </button>
               </div>
 

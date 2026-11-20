@@ -106,7 +106,7 @@ function BackLink({ onClick, label = "Voltar" }: { onClick: () => void; label?: 
 
 /** Login/cadastro da loja: só e-mail e senha (fase de testes) */
 function StoreAuth({ onBack, onDone }: { onBack: () => void; onDone: (s: Store, token: string) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("register");
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -205,9 +205,10 @@ function StoreAuth({ onBack, onDone }: { onBack: () => void; onDone: (s: Store, 
             setMode(mode === "register" ? "login" : "register");
             setError("");
           }}
-          className="w-full py-1 text-center text-sm font-bold text-amber-300"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/4 text-sm font-extrabold text-white active:scale-[0.98]"
         >
-          {mode === "register" ? "Já tenho conta — entrar" : "Ainda não tenho conta — cadastrar"}
+          {mode === "register" ? <LogIn className="h-4 w-4 text-amber-300" /> : <UserPlus className="h-4 w-4 text-amber-300" />}
+          {mode === "register" ? "JÁ TENHO CONTA — ENTRAR" : "AINDA NÃO TENHO CONTA — CADASTRAR LOJA"}
         </button>
       </div>
     </div>

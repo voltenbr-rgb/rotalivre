@@ -259,7 +259,8 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
         )}
       </header>
 
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5 lg:ml-72 lg:max-w-none lg:px-10 lg:py-8">
+      <main className="mx-auto max-w-3xl px-4 py-5 lg:ml-72 lg:max-w-none lg:px-10 lg:py-8">
+        <div className="space-y-4 lg:mx-auto lg:max-w-[1240px]">
         <div className="hidden lg:block">
           <h1 className="font-display text-3xl font-black text-white">{TITLES[tab as Tab].title}</h1>
           <p className="mt-1 text-[14px] text-zinc-400">{TITLES[tab as Tab].sub}</p>
@@ -314,6 +315,7 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
             <p className="text-center text-[11px] text-zinc-600 lg:hidden">Logado como {store.email}</p>
           </div>
         )}
+        </div>
       </main>
     </div>
   );
@@ -785,7 +787,7 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
   }
 
   return (
-    <section className="grid items-start gap-3 lg:grid-cols-2 lg:gap-4 2xl:grid-cols-3">
+    <section className="grid gap-3 lg:grid-cols-2 lg:gap-5 2xl:grid-cols-3">
       {orders.map((o) => {
         const st = STATUS[o.status] ?? STATUS.available;
         const time = new Date(o.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -803,7 +805,7 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
         const canRelaunch = o.status === "cancelled" || o.status === "expired";
         const clientWa = o.clientPhone ? `https://wa.me/55${o.clientPhone.replace(/\D/g, "")}?text=${clientMsg}` : `https://wa.me/?text=${clientMsg}`;
         return (
-          <article key={o.id} className="rounded-3xl border border-white/8 bg-[#101319] p-4">
+          <article key={o.id} className="flex flex-col rounded-3xl border border-white/8 bg-[#101319] p-4 lg:p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[15px] font-extrabold text-white">
@@ -828,6 +830,12 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
                   : o.acceptedVehicles.split(",").map((v) => vehicleLabel(v).toLowerCase()).join(", ")}
               </span>
             </div>
+
+            {o.notes && (
+              <p className="mt-2 line-clamp-2 rounded-xl bg-white/4 px-3 py-2 text-[12px] leading-snug text-zinc-300" title={o.notes}>
+                📝 {o.notes}
+              </p>
+            )}
 
             {o.status === "available" && (
               <div className={`mt-3 rounded-2xl border p-3 ${dropped || stale ? "border-amber-400/30 bg-amber-400/10" : "border-white/8 bg-white/3"}`}>
@@ -946,15 +954,20 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
               </button>
             )}
 
-            {o.status === "available" && (
-              <button onClick={() => cancel(o.id)} className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-red-300">
-                <Trash2 className="h-3.5 w-3.5" /> Cancelar pedido
-              </button>
-            )}
-            {(o.status === "accepted" || o.status === "picked_up") && (
-              <button onClick={() => confirmDelivered(o.id)} className="mt-3 flex items-center gap-1.5 text-[12px] font-bold text-zinc-400">
-                <CircleCheck className="h-3.5 w-3.5" /> Confirmar entrega pela loja (cliente sem o código)
-              </button>
+            {(o.status === "available" || o.status === "accepted" || o.status === "picked_up") && (
+              <div className="mt-auto pt-3">
+                <div className="border-t border-white/6 pt-3">
+                  {o.status === "available" ? (
+                    <button onClick={() => cancel(o.id)} className="flex items-center gap-1.5 text-[12px] font-bold text-red-300">
+                      <Trash2 className="h-3.5 w-3.5" /> Cancelar pedido
+                    </button>
+                  ) : (
+                    <button onClick={() => confirmDelivered(o.id)} className="flex items-center gap-1.5 text-[12px] font-bold text-zinc-400">
+                      <CircleCheck className="h-3.5 w-3.5" /> Confirmar entrega pela loja (cliente sem o código)
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
           </article>
         );

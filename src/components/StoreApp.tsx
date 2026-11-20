@@ -56,6 +56,18 @@ function beep(times = 2) {
   try { navigator.vibrate?.([120, 80, 120]); } catch { /* */ }
 }
 
+/** Tela de computador (≥ 1024 px): layout distribuído */
+function useDesktop() {
+  const [desk, setDesk] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const on = () => setDesk(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return desk;
+}
+
 function trackUrl(token: string) {
   return `${window.location.origin}/acompanhar/${token}`;
 }
@@ -150,10 +162,73 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
   };
 
   const active = orders.filter((o) => ["available", "accepted", "picked_up"].includes(o.status)).length;
+  const todayStr = new Date().toDateString();
+  const deliveredToday = orders.filter((o) => o.status === "delivered" && o.deliveredAt && new Date(o.deliveredAt).toDateString() === todayStr);
+  const waiting = orders.filter((o) => o.status === "available").length;
+  const spentToday = deliveredToday.reduce((sum, o) => sum + o.valueNet, 0);
+
+  const TABS = [
+    { id: "novo", label: "Novo pedido", icon: Plus },
+    { id: "pedidos", label: `Pedidos${active ? ` (${active})` : ""}`, icon: ClipboardList },
+    { id: "loja", label: "Minha loja", icon: StoreIcon },
+  ] as const;
+  const TITLES: Record<Tab, { title: string; sub: string }> = {
+    novo: { title: "Novo pedido", sub: "Cole a localização do cliente, confira o valor e chame um entregador." },
+    pedidos: { title: "Pedidos", sub: "Acompanhe cada entrega ao vivo — atualiza sozinho." },
+    loja: { title: "Minha loja", sub: "Dados e localização de onde os entregadores retiram os pedidos." },
+  };
 
   return (
     <div className="min-h-dvh bg-[#05070a]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#05070a]/92 backdrop-blur-md">
+      {/* Barra lateral (computador) */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-white/6 bg-[#080a0e] p-5 lg:flex">
+        <div className="flex items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-400 text-2xl">{emojiOf(store.category)}</span>
+          <div className="min-w-0">
+            <p className="truncate text-[17px] leading-tight font-bold text-white">{store.name || "Minha loja"}</p>
+            <p className="truncate text-[12px] text-amber-300">Painel do lojista</p>
+          </div>
+        </div>
+
+        {ready && (
+          <nav className="mt-8 space-y-1.5">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-[14px] font-bold transition ${
+                  tab === t.id ? "bg-amber-400 text-zinc-950 shadow-[0_8px_24px_rgba(251,191,36,0.25)]" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                <t.icon className="h-5 w-5" /> {t.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {ready && (
+          <div className="mt-8 space-y-2.5">
+            <p className="px-1 text-[11px] font-bold tracking-widest text-zinc-500 uppercase">Hoje</p>
+            <SideStat label="Em andamento" value={String(active)} tone="text-sky-300" />
+            <SideStat label="Esperando entregador" value={String(waiting)} tone={waiting ? "text-amber-300" : "text-white"} />
+            <SideStat label="Entregues" value={String(deliveredToday.length)} tone="text-emerald-300" />
+            <SideStat label="Pago a entregadores" value={fmtBRL(spentToday)} tone="text-lime-300" />
+          </div>
+        )}
+
+        <div className="mt-auto space-y-2.5">
+          <InstallButton className="h-11 w-full text-xs" label="Instalar app" />
+          <button
+            onClick={onLogout}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/4 text-[13px] font-bold text-zinc-300 hover:bg-white/8"
+          >
+            <LogOut className="h-4 w-4" /> Sair
+          </button>
+          <p className="truncate text-center text-[11px] text-zinc-600">{store.email}</p>
+        </div>
+      </aside>
+
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#05070a]/92 backdrop-blur-md lg:hidden">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-400 text-xl">{emojiOf(store.category)}</span>
           <div className="min-w-0 flex-1">
@@ -169,11 +244,7 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
         </div>
         {ready && (
           <nav className="mx-auto flex max-w-3xl gap-1.5 px-4 pb-3">
-            {([
-              { id: "novo", label: "Novo pedido", icon: Plus },
-              { id: "pedidos", label: `Pedidos${active ? ` (${active})` : ""}`, icon: ClipboardList },
-              { id: "loja", label: "Minha loja", icon: StoreIcon },
-            ] as const).map((t) => (
+            {TABS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
@@ -188,7 +259,11 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
         )}
       </header>
 
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
+      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5 lg:ml-72 lg:max-w-none lg:px-10 lg:py-8">
+        <div className="hidden lg:block">
+          <h1 className="font-display text-3xl font-black text-white">{TITLES[tab as Tab].title}</h1>
+          <p className="mt-1 text-[14px] text-zinc-400">{TITLES[tab as Tab].sub}</p>
+        </div>
         {/* Convite para instalar o app (celular ou computador da loja) */}
         <InstallBanner />
         {tab === "loja" && (
@@ -233,10 +308,10 @@ export default function StoreApp({ store, onStoreChange, onLogout, notify }: Pro
         )}
 
         {tab === "loja" && ready && (
-          <div className="mt-6 space-y-3">
-            <InstallButton className="h-12 w-full text-sm" />
+          <div className="mt-6 space-y-3 lg:max-w-md">
+            <InstallButton className="h-12 w-full text-sm lg:hidden" />
             <ChangePassword endpoint="/api/store/auth" notify={notify} />
-            <p className="text-center text-[11px] text-zinc-600">Logado como {store.email}</p>
+            <p className="text-center text-[11px] text-zinc-600 lg:hidden">Logado como {store.email}</p>
           </div>
         )}
       </main>
@@ -300,8 +375,25 @@ function StoreProfile({
     }
   };
 
+  const desk = useDesktop();
+  const mapBlock = (
+      <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-bold tracking-wide text-zinc-400 uppercase">Onde fica a loja</p>
+        <button onClick={useMyLocation} disabled={locating} className="flex items-center gap-1 text-xs font-bold text-amber-300 disabled:opacity-50">
+          {locating ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
+          Estou na loja agora
+        </button>
+      </div>
+      <PointPicker value={pos} onChange={setPos} pinEmoji={emojiOf(f.category)} height={desk ? 540 : 300} />
+      <p className="mt-1.5 text-[11px] text-zinc-500">
+        Dica: toque em “Estou na loja agora” estando na porta da loja, ou aproxime o mapa e toque no lugar exato.
+      </p>
+    </div>
+  );
   return (
-    <section className="space-y-4">
+    <section className={TWO_COL}>
+      <div className="space-y-4 lg:space-y-5">
       {firstTime && (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
           <p className="font-display text-lg font-extrabold text-white">Vamos deixar sua loja pronta 🏪</p>
@@ -348,19 +440,7 @@ function StoreProfile({
         </Field>
       </div>
 
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-bold tracking-wide text-zinc-400 uppercase">Onde fica a loja</p>
-          <button onClick={useMyLocation} disabled={locating} className="flex items-center gap-1 text-xs font-bold text-amber-300 disabled:opacity-50">
-            {locating ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
-            Estou na loja agora
-          </button>
-        </div>
-        <PointPicker value={pos} onChange={setPos} pinEmoji={emojiOf(f.category)} height={300} />
-        <p className="mt-1.5 text-[11px] text-zinc-500">
-          Dica: toque em “Estou na loja agora” estando na porta da loja, ou aproxime o mapa e toque no lugar exato.
-        </p>
-      </div>
+      {!desk && mapBlock}
 
       <button
         onClick={save}
@@ -370,6 +450,8 @@ function StoreProfile({
         {saving ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
         {firstTime ? "SALVAR E COMEÇAR" : "SALVAR DADOS DA LOJA"}
       </button>
+      </div>
+      {desk && <div className="sticky top-8 self-start">{mapBlock}</div>}
     </section>
   );
 }
@@ -477,8 +559,17 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
     }
   };
 
+  const desk = useDesktop();
+  const mapBlock = (
+      <div>
+      <p className="mb-2 text-xs font-bold tracking-wide text-zinc-400 uppercase">Ponto de entrega no mapa</p>
+      <PointPicker value={dest} onChange={setDest} anchor={anchor} anchorEmoji={emojiOf(store.category)} pinEmoji="🏠" height={desk ? 560 : 280} />
+      {km != null && <p className="mt-1.5 text-[12px] text-zinc-400">Distância aproximada pelas ruas: <b className="text-white">{fmtKm(km)}</b></p>}
+    </div>
+  );
   return (
-    <section className="space-y-4">
+    <section className={TWO_COL}>
+      <div className="space-y-4 lg:space-y-5">
       <div className="rounded-2xl border border-lime-400/25 bg-lime-400/6 p-3">
         <p className="flex items-center gap-1.5 text-xs font-bold tracking-wide text-lime-300 uppercase">
           <ClipboardPaste className="h-3.5 w-3.5" /> Cliente mandou a localização?
@@ -526,11 +617,7 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
         </Field>
       </div>
 
-      <div>
-        <p className="mb-2 text-xs font-bold tracking-wide text-zinc-400 uppercase">Ponto de entrega no mapa</p>
-        <PointPicker value={dest} onChange={setDest} anchor={anchor} anchorEmoji={emojiOf(store.category)} pinEmoji="🏠" height={280} />
-        {km != null && <p className="mt-1.5 text-[12px] text-zinc-400">Distância aproximada pelas ruas: <b className="text-white">{fmtKm(km)}</b></p>}
-      </div>
+      {!desk && mapBlock}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Valor para o entregador (R$)">
@@ -632,6 +719,8 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
       >
         {sending ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Package className="h-5 w-5" />} CHAMAR ENTREGADOR
       </button>
+      </div>
+      {desk && <div className="sticky top-8 self-start">{mapBlock}</div>}
     </section>
   );
 }
@@ -696,7 +785,7 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
   }
 
   return (
-    <section className="space-y-3">
+    <section className="grid items-start gap-3 lg:grid-cols-2 lg:gap-4 2xl:grid-cols-3">
       {orders.map((o) => {
         const st = STATUS[o.status] ?? STATUS.available;
         const time = new Date(o.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -874,9 +963,9 @@ function OrdersList({ orders, reload, notify }: { orders: StoreOrder[]; reload: 
   );
 }
 
-function Field({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+function Field({ label, icon, children, className = "" }: { label: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <label className="block">
+    <label className={`block ${className}`}>
       <span className="mb-1.5 flex items-center gap-1.5 text-xs font-bold tracking-wide text-zinc-400 uppercase">
         {icon} {label}
       </span>
@@ -903,4 +992,16 @@ async function copyText(text: string, notify: Props["notify"]) {
     }
   }
   notify(text.startsWith("http") ? "Link copiado — cole no WhatsApp do cliente" : `Código ${text} copiado`);
+}
+
+/* Duas colunas no computador: dados à esquerda, mapa fixo à direita */
+const TWO_COL = "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-start lg:gap-8";
+
+function SideStat({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-white/6 bg-white/3 px-4 py-3">
+      <span className="text-[12px] text-zinc-400">{label}</span>
+      <span className={`font-display text-lg font-black ${tone}`}>{value}</span>
+    </div>
+  );
 }

@@ -85,6 +85,12 @@ export default function PointPicker({ value, onChange, anchor, anchorEmoji = "�
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value?.lat, value?.lng]);
 
+  // Altura muda (celular ↔ computador): o Leaflet precisa recalcular o tamanho
+  useEffect(() => {
+    const t = setTimeout(() => mapRef.current?.invalidateSize(), 60);
+    return () => clearTimeout(t);
+  }, [height]);
+
   // Centraliza quando o valor muda por fora (ex.: botão "usar minha localização")
   const lastCentered = useRef<string>("");
   useEffect(() => {

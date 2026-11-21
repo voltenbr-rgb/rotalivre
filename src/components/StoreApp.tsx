@@ -514,6 +514,22 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
     }
   };
 
+  // Cliente mandou pelo link "Estou aqui"
+  const applyClientLocation = (r: LocReq) => {
+    if (r.lat == null || r.lng == null) return;
+    setDest({ lat: r.lat, lng: r.lng });
+    setF((cur) => ({
+      ...cur,
+      clientName: cur.clientName.trim() ? cur.clientName : r.clientName,
+      deliveryAddress: cur.deliveryAddress.trim() ? cur.deliveryAddress : r.address,
+      deliveryNeighborhood: cur.deliveryNeighborhood.trim() ? cur.deliveryNeighborhood : r.neighborhood,
+      notes: cur.notes.trim() || !r.reference ? cur.notes : `Ref.: ${r.reference}`,
+    }));
+    setPastedFrom(
+      `Enviado pelo cliente${r.clientName ? ` (${r.clientName})` : ""}: ${r.address || `${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}`}${r.reference ? ` • ${r.reference}` : ""}`,
+    );
+  };
+
   const km = useMemo(
     () => (dest ? Math.max(0.5, Math.round(haversineKm(anchor.lat, anchor.lng, dest.lat, dest.lng) * 1.3 * 10) / 10) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -572,6 +588,8 @@ function NewOrder({ store, notify, onCreated }: { store: Store; notify: Props["n
   return (
     <section className={TWO_COL}>
       <div className="space-y-4 lg:space-y-5">
+      <LocationRequestBox clientPhone={f.clientPhone} notify={notify} onReceived={applyClientLocation} />
+
       <div className="rounded-2xl border border-lime-400/25 bg-lime-400/6 p-3">
         <p className="flex items-center gap-1.5 text-xs font-bold tracking-wide text-lime-300 uppercase">
           <ClipboardPaste className="h-3.5 w-3.5" /> Cliente mandou a localização?
@@ -1004,7 +1022,7 @@ async function copyText(text: string, notify: Props["notify"]) {
       t.remove();
     }
   }
-  notify(text.startsWith("http") ? "Link copiado — cole no WhatsApp do cliente" : `Código ${text} copiado`);
+  notify(/^\d{4}$/.test(text) ? `Código ${text} copiado` : "Copiado! Cole no WhatsApp do cliente");
 }
 
 /* Duas colunas no computador: dados à esquerda, mapa fixo à direita */
@@ -1015,6 +1033,158 @@ function SideStat({ label, value, tone }: { label: string; value: string; tone: 
     <div className="flex items-center justify-between rounded-2xl border border-white/6 bg-white/3 px-4 py-3">
       <span className="text-[12px] text-zinc-400">{label}</span>
       <span className={`font-display text-lg font-black ${tone}`}>{value}</span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Link "Estou aqui": o cliente manda a localização pelo nosso mapa     */
+/* ------------------------------------------------------------------ */
+type LocReq = {
+  id: number; token: string; status: "pendente" | "recebido";
+  lat: number | null; lng: number | null; accuracy: number | null;
+  address: string; neighborhood: string; reference: string; clientName: string;
+  createdAt: string; receivedAt: string | null;
+};
+
+const locUrl = (token: string) => `${window.location.origin}/localizacao/${token}`;
+
+function LocationRequestBox({
+  clientPhone, notify, onReceived,
+}: { clientPhone: string; notify: Props["notify"]; onReceived: (r: LocReq) => void }) {
+  const [list, setList] = useState<LocReq[]>([]);
+  const [current, setCurrent] = useState<LocReq | null>(null);
+  const [creating, setCreating] = useState(false);
+  const applied = useRef<Set<number>>(new Set());
+  const currentRef = useRef<LocReq | null>(null);
+  currentRef.current = current;
+  const onReceivedRef = useRef(onReceived);
+  onReceivedRef.current = onReceived;
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/store/location-requests");
+      if (!res.ok) return;
+      const rows: LocReq[] = (await res.json()).requests ?? [];
+      setList(rows);
+      const cur = currentRef.current;
+      if (cur) {
+        const now = rows.find((r) => r.id === cur.id);
+        if (now && now.status === "recebido" && !applied.current.has(now.id)) {
+          applied.current.add(now.id);
+          setCurrent(now);
+          onReceivedRef.current(now);
+          beep(2);
+          notify("📍 O cliente mandou a localização! Já marquei no mapa.");
+        }
+      }
+    } catch { /* tenta no próximo ciclo */ }
+  }, [notify]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const create = async () => {
+    setCreating(true);
+    try {
+      const res = await apiFetch("/api/store/location-requests", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return notify(data.error ?? "Não foi possível gerar o link", "warn");
+      setCurrent(data.request);
+      load();
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const message = (token: string) =>
+    `Olá! Para a gente entregar certinho, toque no link e aperte "Estou aqui" para mandar sua localização: ${locUrl(token)}`;
+  const waHref = (token: string) => {
+    const digits = clientPhone.replace(/\D/g, "");
+    const phone = digits.length >= 10 ? (digits.startsWith("55") ? digits : `55${digits}`) : "";
+    return `https://wa.me/${phone}?text=${encodeURIComponent(message(token))}`;
+  };
+
+  const received = list.filter((r) => r.status === "recebido" && r.id !== current?.id).slice(0, 5);
+
+  return (
+    <div className="rounded-2xl border border-sky-400/25 bg-sky-400/6 p-3">
+      <p className="flex items-center gap-1.5 text-xs font-bold tracking-wide text-sky-300 uppercase">
+        <MapPin className="h-3.5 w-3.5" /> Pedir a localização ao cliente
+      </p>
+
+      {!current || current.status === "recebido" ? (
+        <>
+          <p className="mt-0.5 text-[12px] text-zinc-400">
+            Mande um link no WhatsApp: o cliente toca em <b className="text-zinc-200">“Estou aqui”</b> e o ponto chega sozinho neste pedido.
+          </p>
+          {current?.status === "recebido" && (
+            <p className="mt-2 rounded-xl bg-emerald-500/12 px-3 py-2 text-[12px] font-bold text-emerald-300">
+              ✅ Localização recebida{current.clientName ? ` de ${current.clientName}` : ""} e marcada no mapa.
+            </p>
+          )}
+          <button
+            onClick={create}
+            disabled={creating}
+            className="mt-2 flex h-11 items-center gap-2 rounded-xl bg-sky-500 px-4 text-[13px] font-black text-white active:scale-95 disabled:opacity-60"
+          >
+            {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+            {current ? "Gerar outro link" : "Gerar link de localização"}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="mt-1 flex items-center gap-2 text-[13px] font-bold text-sky-100">
+            <LoaderCircle className="h-4 w-4 animate-spin text-sky-300" /> Esperando o cliente enviar…
+          </p>
+          <p className="mt-1 truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-zinc-400">{locUrl(current.token)}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <a
+              href={waHref(current.token)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-[13px] font-bold text-white active:scale-95"
+            >
+              <MessageCircle className="h-4 w-4" /> Enviar no WhatsApp
+            </a>
+            <button
+              onClick={() => copyText(message(current.token), notify)}
+              className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3.5 py-2 text-[13px] font-bold text-white active:scale-95"
+            >
+              <Copy className="h-4 w-4" /> Copiar mensagem
+            </button>
+            <button onClick={() => setCurrent(null)} className="px-2 text-[12px] font-bold text-zinc-500">
+              Cancelar
+            </button>
+          </div>
+        </>
+      )}
+
+      {received.length > 0 && (
+        <div className="mt-3 space-y-1.5 border-t border-white/6 pt-2.5">
+          <p className="text-[11px] font-bold tracking-wide text-zinc-500 uppercase">Recebidas hoje</p>
+          {received.map((r) => (
+            <div key={r.id} className="flex items-center gap-2 rounded-xl bg-white/4 px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300">
+                📍 {r.clientName || "Cliente"} • {r.address || `${r.lat?.toFixed(4)}, ${r.lng?.toFixed(4)}`}
+                {r.reference ? ` • ${r.reference}` : ""}
+              </span>
+              <button
+                onClick={() => {
+                  onReceived(r);
+                  notify("Localização colocada no pedido");
+                }}
+                className="shrink-0 rounded-lg bg-sky-500/20 px-2.5 py-1 text-[11px] font-bold text-sky-200"
+              >
+                Usar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

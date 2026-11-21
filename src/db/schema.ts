@@ -255,3 +255,20 @@ export const orderCancellations = sqliteTable("order_cancellations", {
   stage: text("stage").notNull().default("accepted"),
   createdAt: ts("created_at").notNull().$defaultFn(now),
 });
+
+/* Link "Estou aqui": o cliente manda a localização para a loja montar o pedido */
+export const locationRequests = sqliteTable("location_requests", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  token: text("token").notNull(),
+  storeId: integer("store_id").notNull(),
+  status: text("status").notNull().default("pendente"), // pendente | recebido
+  lat: real("lat"),
+  lng: real("lng"),
+  accuracy: real("accuracy"),
+  address: text("address").notNull().default(""),
+  neighborhood: text("neighborhood").notNull().default(""),
+  reference: text("reference").notNull().default(""),
+  clientName: text("client_name").notNull().default(""),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+  receivedAt: ts("received_at"),
+});
